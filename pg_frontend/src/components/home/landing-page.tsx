@@ -1,5 +1,9 @@
+﻿"use client";
+
+import { useMemo, useState } from "react";
 import type { Faq, Feature, Plan } from "@/components/home/content";
 import { PricingCard } from "@/components/home/pricing-card";
+import { OpsTabs } from "@/components/home/ops-tabs";
 
 type LandingPageProps = {
   features: Feature[];
@@ -7,199 +11,171 @@ type LandingPageProps = {
   faqs: Faq[];
 };
 
-export function LandingPage({ features, plans, faqs }: LandingPageProps) {
+const services = [
+  "Android App",
+  "Web App",
+  "Cloud Support",
+  "PG Listing",
+  "Express Integration",
+  "PG Cloud",
+];
+
+const stats = [
+  { value: "900+", label: "Active PGs" },
+  { value: "500+", label: "Active Clients" },
+  { value: "10000+", label: "Inmates" },
+];
+
+const featureFilters = ["All", "Operations", "Billing", "Residents", "Admin"] as const;
+
+type FeatureFilter = (typeof featureFilters)[number];
+
+export function LandingPage({ features, plans }: LandingPageProps) {
+  const [activeFilter, setActiveFilter] = useState<FeatureFilter>("All");
+
+  const filteredFeatures = useMemo(() => {
+    if (activeFilter === "All") {
+      return features;
+    }
+    return features.filter((feature) => feature.category === activeFilter);
+  }, [activeFilter, features]);
+
   return (
     <div className="min-h-screen [background:var(--color-page-gradient)] text-[var(--color-text-primary)]">
       <header className="mx-auto w-full max-w-[96rem] px-3 pt-6 sm:px-4 lg:px-6">
-        <div className="mb-4 inline-flex rounded-full border border-[color:var(--color-amber-soft)] bg-[var(--color-amber-soft)] px-4 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-amber)]">
-          Now live: smart PG operations
-        </div>
-        <nav className="rounded-2xl border border-[color:var(--color-nav-border)] bg-[color:rgba(255,255,255,0.75)] px-5 py-4 shadow-[var(--shadow-nav)] backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="text-xl font-black tracking-tight text-[var(--color-text-primary)]">
-              EasyPG
+        <nav className="flex flex-wrap items-center justify-between gap-4 rounded-[32px] border border-[color:var(--color-nav-border)] bg-[var(--color-surface-glass)] px-6 py-4 shadow-[var(--shadow-nav)] backdrop-blur">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+              <img src="/brand/pg-logo.svg" alt="EasyPG" className="h-8 w-8" />
             </div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-muted)] sm:gap-5">
-              <a href="#features" className="cursor-pointer hover:text-[var(--color-text-primary)]">
-                Features
-              </a>
-              <a href="#pricing" className="cursor-pointer hover:text-[var(--color-text-primary)]">
-                Pricing
-              </a>
-              <a href="#faq" className="cursor-pointer hover:text-[var(--color-text-primary)]">
-                FAQ
-              </a>
-              <a href="#contact" className="cursor-pointer hover:text-[var(--color-text-primary)]">
-                Contact
-              </a>
+            <div>
+              <p className="text-lg font-black tracking-tight text-[var(--color-text-title)]">EasyPG</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--color-text-muted)]">
+                PG Manager Suite
+              </p>
             </div>
+          </div>
+
+          <div className="hidden flex-wrap items-center gap-6 text-sm font-semibold text-[var(--color-text-muted)] md:flex">
+            <a href="#services" className="cursor-pointer hover:text-[var(--color-text-primary)]">
+              Services
+            </a>
+            <a href="#features" className="cursor-pointer hover:text-[var(--color-text-primary)]">
+              Features
+            </a>
+            <a href="#demo" className="cursor-pointer hover:text-[var(--color-text-primary)]">
+              Demo
+            </a>
+            <a href="#pricing" className="cursor-pointer hover:text-[var(--color-text-primary)]">
+              Pricing
+            </a>
+            <a href="#contact" className="cursor-pointer hover:text-[var(--color-text-primary)]">
+              Contact
+            </a>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <a
+              href="/admin/login"
+              className="cursor-pointer rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-2 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)]"
+            >
+              Login
+            </a>
             <a
               href="/admin/signup"
-              className="cursor-pointer rounded-xl bg-[var(--color-brand)] px-4 py-2 text-sm font-semibold text-[var(--color-text-inverse)] transition hover:bg-[var(--color-brand-hover)]"
+              className="cursor-pointer rounded-full bg-[var(--color-brand)] px-5 py-2 text-sm font-semibold text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)] transition hover:bg-[var(--color-brand-hover)]"
             >
-              Start Free
+              Register
             </a>
           </div>
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-[96rem] px-3 pb-24 pt-10 sm:px-4 lg:px-6">
-      <section className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
-          <div>
-            <p className="mb-4 inline-flex items-center rounded-full bg-[var(--color-sky-soft)] px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[var(--color-sky)]">
-              Smart PG and hostel management
-            </p>
-            <h1 className="max-w-2xl text-4xl font-black leading-tight tracking-tight text-[var(--color-text-title)] sm:text-5xl">
-              Manage tenants, billing, and occupancy with one clear dashboard.
-            </h1>
-            <p className="mt-5 max-w-xl text-base leading-relaxed text-[var(--color-text-muted)] sm:text-lg">
-              Built for Indian PG owners who need transparent pricing and a
-              practical workflow from onboarding to checkout.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a
-                href="/admin/signup"
-                className="cursor-pointer rounded-xl bg-[var(--color-emerald)] px-5 py-3 text-sm font-bold text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)] transition hover:bg-[var(--color-emerald-hover)]"
-              >
-                Start Free - No Card Needed
-              </a>
-              <a
-                href="/admin/login"
-                className="cursor-pointer rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-5 py-3 text-sm font-bold text-[var(--color-text-secondary)] transition hover:border-[var(--color-text-soft)] hover:bg-[var(--color-surface-muted)]"
-              >
-                Admin Login
-              </a>
-              <a
-                href="#pricing"
-                className="cursor-pointer rounded-xl border border-[var(--color-border-strong)] bg-[var(--color-surface)] px-5 py-3 text-sm font-bold text-[var(--color-text-secondary)] transition hover:border-[var(--color-text-soft)] hover:bg-[var(--color-surface-muted)]"
-              >
-                View Pricing
-              </a>
-            </div>
-            <div className="mt-6 flex flex-wrap gap-4 text-sm font-semibold text-[var(--color-text-muted)]">
-              <span>5 min setup</span>
-              <span>24/7 access</span>
-              <span>50+ workflows</span>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-[color:var(--color-card-border-soft)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)]">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-[var(--color-text-primary)]">Live Snapshot</h2>
-              <span className="rounded-full bg-[var(--color-emerald-soft)] px-2 py-1 text-xs font-bold text-[var(--color-emerald-strong)]">
-                Healthy
-              </span>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl bg-[var(--color-dark-panel)] p-4 text-[var(--color-text-inverse)]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.12em] text-[var(--color-text-soft)]">
-                    Occupancy
-                  </p>
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(148,163,184,0.18)]">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                    >
-                      <path
-                        d="M3 20V10.5L12 4l9 6.5V20h-6.5v-6h-5v6H3Z"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                </div>
-                <p className="mt-2 text-3xl font-black">92%</p>
-              </div>
-              <div className="rounded-2xl bg-[var(--color-amber-soft)] p-4 text-[var(--color-text-primary)]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.12em] text-[var(--color-amber)]">
-                    Monthly Revenue
-                  </p>
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(180,83,9,0.16)] text-[var(--color-amber)]">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                    >
-                      <path
-                        d="M4 17.5h16M6.5 14.5V9.8c0-1.6 1.3-2.8 2.8-2.8h5.4c1.6 0 2.8 1.3 2.8 2.8v4.7M4.5 7h15"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                </div>
-                <p className="mt-2 text-3xl font-black">INR 8.4L</p>
-              </div>
-              <div className="rounded-2xl bg-[var(--color-sky-soft)] p-4 text-[var(--color-text-primary)]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.12em] text-[var(--color-sky)]">
-                    Pending Payments
-                  </p>
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(2,132,199,0.14)] text-[var(--color-sky)]">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                    >
-                      <path
-                        d="M12 6v6l3.5 2M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                </div>
-                <p className="mt-2 text-3xl font-black">17</p>
-              </div>
-              <div className="rounded-2xl bg-[var(--color-emerald-soft)] p-4 text-[var(--color-text-primary)]">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.12em] text-[var(--color-emerald-strong)]">
-                    New Joinings
-                  </p>
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[color:rgba(4,120,87,0.14)] text-[var(--color-emerald-strong)]">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      aria-hidden="true"
-                      className="h-4 w-4"
-                    >
-                      <path
-                        d="M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM5 20a7 7 0 1 1 14 0M19 8v4M21 10h-4"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                </div>
-                <p className="mt-2 text-3xl font-black">26</p>
+      <main className="mx-auto w-full max-w-[96rem] px-3 pb-24 pt-12 sm:px-4 lg:px-6">
+        <section className="space-y-8">
+          <div className="relative overflow-hidden rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+            <div className="absolute inset-0 bg-[url('/brand/hero.jpg')] bg-cover bg-center" />
+            <div className="absolute inset-0 bg-[rgba(14,10,12,0.58)]" />
+            <div className="relative z-10 flex flex-col items-center gap-6 px-6 py-16 text-center text-[var(--color-text-inverse)] sm:px-10">
+              <h1 className="text-3xl font-black tracking-tight sm:text-5xl">
+                You think your PG is well managed?
+                <span className="block text-[var(--color-brand)]">Think again!</span>
+              </h1>
+              <div className="flex flex-wrap gap-3">
+                <a
+                  href="#services"
+                  className="cursor-pointer rounded-2xl bg-[var(--color-brand)] px-6 py-3 text-sm font-bold text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)] transition hover:bg-[var(--color-brand-hover)]"
+                >
+                  Learn More
+                </a>
+                <a
+                  href="#demo"
+                  className="cursor-pointer rounded-2xl border border-[rgba(255,255,255,0.35)] bg-[rgba(255,255,255,0.08)] px-6 py-3 text-sm font-bold text-[var(--color-text-inverse)] backdrop-blur transition hover:bg-[rgba(255,255,255,0.16)]"
+                >
+                  View Demo
+                </a>
               </div>
             </div>
           </div>
-      </section>
 
-      <section id="features" className="pt-20">
-          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-[var(--color-sky)]">
-            Features
+          <div className="grid gap-3 sm:grid-cols-3">
+            {stats.map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-center"
+              >
+                <p className="text-2xl font-black text-[var(--color-text-title)]">{stat.value}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
+                  {stat.label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="services" className="pt-20">
+          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-[var(--color-brand)]">
+            Services
           </p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-[var(--color-text-title)] sm:text-4xl">
-            Everything you need to run your PG
-          </h2>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {features.map((feature) => (
+            {services.map((service) => (
+              <article
+                key={service}
+                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-feature)]"
+              >
+                <h3 className="text-lg font-extrabold text-[var(--color-text-primary)]">{service}</h3>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="features" className="pt-20">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-[var(--color-brand)]">
+              Features
+            </p>
+            <div className="flex flex-wrap gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-alt)] p-1">
+              {featureFilters.map((filter) => {
+                const isActive = filter === activeFilter;
+                return (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setActiveFilter(filter)}
+                    className={`cursor-pointer rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+                      isActive
+                        ? "bg-[var(--color-brand)] text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)]"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredFeatures.map((feature) => (
               <article
                 key={feature.title}
                 className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-feature)]"
@@ -207,90 +183,81 @@ export function LandingPage({ features, plans, faqs }: LandingPageProps) {
                 <h3 className="text-lg font-extrabold text-[var(--color-text-primary)]">
                   {feature.title}
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-muted)]">
-                  {feature.description}
-                </p>
               </article>
             ))}
           </div>
-      </section>
+        </section>
 
-      <section id="pricing" className="pt-20">
-          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-[var(--color-emerald-strong)]">
+        <section id="demo" className="pt-20">
+          <div className="rounded-3xl border border-[var(--color-border)] bg-[linear-gradient(135deg,var(--color-emerald-soft),var(--color-surface))] px-6 py-10 text-[var(--color-text-primary)] sm:px-10">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--color-brand)]">
+              Demo
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a
+                href="https://www.youtube.com"
+                className="cursor-pointer rounded-xl bg-[var(--color-brand)] px-5 py-3 text-sm font-bold text-[var(--color-text-inverse)] transition hover:bg-[var(--color-brand-hover)]"
+              >
+                View Demo
+              </a>
+              <a
+                href="/admin/signup"
+                className="cursor-pointer rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3 text-sm font-bold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)]"
+              >
+                Start Trial
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section id="pricing" className="pt-20">
+          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-[var(--color-brand)]">
             Pricing
-          </p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-[var(--color-text-title)] sm:text-4xl">
-            Simple, transparent pricing
-          </h2>
-          <p className="mt-2 max-w-2xl text-[var(--color-text-muted)]">
-            Pay only for what you use. No setup fees, no hidden clauses.
           </p>
           <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {plans.map((plan) => (
               <PricingCard key={plan.name} plan={plan} />
             ))}
           </div>
-      </section>
+        </section>
 
-      <section id="faq" className="pt-20">
-          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-[var(--color-amber)]">
-            FAQ
+        <section id="pg-cloud" className="pt-20">
+          <p className="text-sm font-extrabold uppercase tracking-[0.2em] text-[var(--color-brand)]">
+            PG Cloud
           </p>
-          <h2 className="mt-2 text-3xl font-black tracking-tight text-[var(--color-text-title)] sm:text-4xl">
-            Frequently asked questions
-          </h2>
-          <div className="mt-8 space-y-3">
-            {faqs.map((item) => (
-              <details
-                key={item.q}
-                className="cursor-pointer group rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5"
-              >
-                <summary className="cursor-pointer list-none pr-8 text-base font-bold text-[var(--color-text-primary)]">
-                  {item.q}
-                </summary>
-                <p className="mt-3 text-sm leading-relaxed text-[var(--color-text-muted)]">{item.a}</p>
-              </details>
-            ))}
+          <div className="mt-8">
+            <OpsTabs />
           </div>
-      </section>
+        </section>
 
-      <section id="contact" className="pt-20">
+        <section id="contact" className="pt-20">
           <div className="rounded-3xl border border-[var(--color-border)] [background:linear-gradient(135deg,var(--color-footer-from),var(--color-footer-to))] px-6 py-8 text-[var(--color-text-inverse)] sm:px-9">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-[var(--color-emerald-soft)]">
-              Get in touch
-            </p>
-            <h2 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">
-              Ready to transform your PG management?
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm text-[color:rgba(226,232,240,0.95)] sm:text-base">
-              Join hundreds of PG owners already using EasyPG to streamline
-              operations and grow revenue.
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[rgba(255,255,255,0.7)]">
+              Contact
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a
                 href="/admin/signup"
-                className="cursor-pointer rounded-xl bg-[var(--color-emerald-hover)] px-5 py-3 text-sm font-bold text-[var(--color-text-inverse)] transition hover:bg-[var(--color-emerald)]"
+                className="cursor-pointer rounded-xl bg-[var(--color-brand)] px-5 py-3 text-sm font-bold text-[var(--color-text-inverse)] transition hover:bg-[var(--color-brand-hover)]"
               >
-                Start Free Today
+                Start Free
               </a>
               <a
-                href="mailto:support@easypg.app"
-                className="cursor-pointer rounded-xl border border-[color:rgba(100,116,139,0.9)] px-5 py-3 text-sm font-bold text-[color:rgba(241,245,249,0.95)] transition hover:bg-[var(--color-brand-hover)]"
+                href="mailto:support@pgmanager.in"
+                className="cursor-pointer rounded-xl border border-[rgba(255,255,255,0.45)] px-5 py-3 text-sm font-bold text-[rgba(255,255,255,0.95)] transition hover:bg-[rgba(255,255,255,0.15)]"
               >
-                support@easypg.app
+                support@pgmanager.in
               </a>
             </div>
           </div>
-      </section>
+        </section>
 
-      <footer className="border-t border-[var(--color-border)] pt-10 text-sm text-[var(--color-text-muted)]">
+        <footer className="border-t border-[var(--color-border)] pt-10 text-sm text-[var(--color-text-muted)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="font-bold text-[var(--color-text-secondary)]">
-              EasyPG - Smart PG and hostel management made simple
-            </p>
-            <p>Copyright 2026 EasyPG. All rights reserved.</p>
+            <p className="font-bold text-[var(--color-text-secondary)]">EasyPG</p>
+            <p>© 2026</p>
           </div>
-      </footer>
+        </footer>
       </main>
     </div>
   );

@@ -11,6 +11,8 @@ type Setting = {
   currency: string;
   timezone: string;
   invoice_prefix: string;
+  electricity_rate_per_unit: number;
+  electricity_unit_label: string;
 };
 
 const defaultSetting: Setting = {
@@ -21,6 +23,8 @@ const defaultSetting: Setting = {
   currency: "INR",
   timezone: "Asia/Kolkata",
   invoice_prefix: "INV",
+  electricity_rate_per_unit: 0,
+  electricity_unit_label: "kWh",
 };
 
 export default function SettingsPage() {
@@ -49,6 +53,8 @@ export default function SettingsPage() {
         currency: data.currency || "INR",
         timezone: data.timezone || "Asia/Kolkata",
         invoice_prefix: data.invoice_prefix || "INV",
+        electricity_rate_per_unit: Number(data.electricity_rate_per_unit || 0),
+        electricity_unit_label: data.electricity_unit_label || "kWh",
       });
     } catch {
       setError("Unable to load settings right now.");
@@ -125,6 +131,24 @@ export default function SettingsPage() {
           <label className="text-sm font-medium text-[var(--color-text-secondary)]">
             Invoice Prefix
             <input value={form.invoice_prefix} onChange={(e) => setForm((p) => ({ ...p, invoice_prefix: e.target.value.toUpperCase() }))} className="mt-1 w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm" />
+          </label>
+          <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+            Electricity Rate / Unit
+            <input
+              type="number"
+              min={0}
+              value={form.electricity_rate_per_unit}
+              onChange={(e) => setForm((p) => ({ ...p, electricity_rate_per_unit: Number(e.target.value) }))}
+              className="mt-1 w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+            Electricity Unit Label
+            <input
+              value={form.electricity_unit_label}
+              onChange={(e) => setForm((p) => ({ ...p, electricity_unit_label: e.target.value }))}
+              className="mt-1 w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm"
+            />
           </label>
           <div className="sm:col-span-2 flex justify-end"><button disabled={isLoading || isSaving} type="submit" className="cursor-pointer rounded-md bg-[var(--color-emerald)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Saving..." : "Save Settings"}</button></div>
         </form>

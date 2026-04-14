@@ -1,6 +1,7 @@
-export type Feature = {
+﻿export type Feature = {
   title: string;
   description: string;
+  category: "Operations" | "Billing" | "Residents" | "Admin";
 };
 
 export type Plan = {
@@ -19,111 +20,57 @@ export type Faq = {
 };
 
 export const features: Feature[] = [
-  {
-    title: "Multi-Building Management",
-    description: "Control all your PG properties from one unified dashboard.",
-  },
-  {
-    title: "Tenant Lifecycle",
-    description:
-      "Handle onboarding, room assignment, renewals, and checkout in minutes.",
-  },
-  {
-    title: "Automated Billing",
-    description:
-      "Generate invoices, track dues, and send payment reminders automatically.",
-  },
-  {
-    title: "Real-time Analytics",
-    description:
-      "Monitor occupancy, revenue, and monthly growth with live insights.",
-  },
-  {
-    title: "Secure + Reliable",
-    description:
-      "Built with enterprise-grade security, backups, and stable uptime.",
-  },
-  {
-    title: "Fast Experience",
-    description:
-      "A smooth app experience for owners, admins, and residents on any device.",
-  },
+  { title: "Manage PGs, Hostels, Apartments", description: "", category: "Operations" },
+  { title: "Manage Inmates", description: "", category: "Residents" },
+  { title: "Manage Staff", description: "", category: "Admin" },
+  { title: "Availability Tracking", description: "", category: "Operations" },
+  { title: "Expense Management", description: "", category: "Billing" },
+  { title: "Smart Rent Collection", description: "", category: "Billing" },
+  { title: "Rent Receipts", description: "", category: "Billing" },
+  { title: "Reports", description: "", category: "Admin" },
+  { title: "Bookings", description: "", category: "Operations" },
+  { title: "Food Register", description: "", category: "Operations" },
+  { title: "Issue Management", description: "", category: "Residents" },
+  { title: "Profit and Loss", description: "", category: "Billing" },
 ];
 
 export const plans: Plan[] = [
   {
-    name: "Free",
+    name: "Starter",
     price: "INR 0",
-    period: "/ forever",
-    subtitle: "Great for getting started",
-    items: [
-      "Up to 50 tenants",
-      "Up to 2 buildings",
-      "2 admin users",
-      "All core features",
-    ],
-    cta: "Start Free",
+    period: "/ 3 months",
+    subtitle: "",
+    items: [],
+    cta: "Start Trial",
     highlight: false,
   },
   {
-    name: "Professional",
-    price: "INR 10",
-    period: "/ bed / month",
-    subtitle: "For growing PG operations",
-    items: [
-      "51-300 tenants",
-      "Up to 10 buildings",
-      "5 admin users",
-      "Advanced analytics",
-    ],
-    cta: "Start Professional",
+    name: "Standard",
+    price: "INR 3600",
+    period: "/ PG / year",
+    subtitle: "",
+    items: [],
+    cta: "Choose Standard",
     highlight: true,
   },
   {
-    name: "Business",
-    price: "INR 8",
-    period: "/ bed / month",
-    subtitle: "For medium-large chains",
-    items: [
-      "301-900 tenants",
-      "Up to 50 buildings",
-      "10 admin users",
-      "Custom workflows",
-    ],
-    cta: "Start Business",
+    name: "Growth",
+    price: "INR 30",
+    period: "/ bed / year",
+    subtitle: "",
+    items: [],
+    cta: "Choose Growth",
     highlight: false,
   },
   {
     name: "Enterprise",
     price: "Custom",
     period: " pricing",
-    subtitle: "For large-scale operations",
-    items: [
-      "Unlimited tenants",
-      "Unlimited buildings",
-      "Unlimited admins",
-      "24/7 dedicated support",
-    ],
+    subtitle: "",
+    items: [],
     cta: "Contact Sales",
     highlight: false,
   },
 ];
 
-export const faqs: Faq[] = [
-  {
-    q: "How does the free tier work?",
-    a: "You can use core features forever for up to 50 tenants and 2 buildings, with no card required.",
-  },
-  {
-    q: "Can I switch plans later?",
-    a: "Yes. Upgrade, downgrade, or cancel anytime with no lock-in contracts.",
-  },
-  {
-    q: "How is billing calculated?",
-    a: "Paid plans are charged per bed per month based on your active tenant count.",
-  },
-  {
-    q: "Is my data secure?",
-    a: "Your data is encrypted at rest and in transit, with regular backups and strict access controls.",
-  },
-];
+export const faqs: Faq[] = [];

@@ -1,40 +1,47 @@
+﻿"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
+import { DashboardPulse } from "@/components/home/dashboard-pulse";
 import Link from "next/link";
 
+type ActivityCategory = "All" | "Billing" | "Check-ins" | "Support";
+
+type ActivityItem = {
+  title: string;
+  detail: string;
+  category: ActivityCategory;
+};
+
 const metrics = [
-  { label: "Total Buildings", value: "12", tone: "sky" as const },
+  { label: "Buildings", value: "12", tone: "sky" as const },
   { label: "Occupied Beds", value: "416", tone: "emerald" as const },
   { label: "Pending Dues", value: "INR 1.2L", tone: "amber" as const },
-  { label: "Open Complaints", value: "09", tone: "slate" as const },
+  { label: "Complaints", value: "09", tone: "slate" as const },
 ];
 
 const quickActions = [
-  { label: "Add New Building", href: "/admin/buildings" },
-  { label: "Manage Rooms", href: "/admin/rooms" },
-  { label: "Manage Tenants", href: "/admin/tenants" },
-  { label: "Create Invoice", href: "#" },
-  { label: "Register Tenant", href: "/admin/tenants" },
-  { label: "Review Complaints", href: "#" },
+  { label: "Add Building", href: "/admin/buildings" },
+  { label: "Add Room", href: "/admin/rooms" },
+  { label: "Add Tenant", href: "/admin/tenants" },
+  { label: "New Invoice", href: "/admin/invoices" },
+  { label: "Collect Payment", href: "/admin/payments" },
+  { label: "New Complaint", href: "/admin/complaints" },
+  { label: "Expenses", href: "/admin/expenses" },
+  { label: "Settings", href: "/admin/settings" },
 ];
 
-const recentActivity = [
-  {
-    title: "Invoice generated for Block A",
-    detail: "14 minutes ago",
-  },
-  {
-    title: "2 new pre-bookings received",
-    detail: "31 minutes ago",
-  },
-  {
-    title: "Electricity billing updated for Wing C",
-    detail: "1 hour ago",
-  },
-  {
-    title: "Tenant checkout request approved",
-    detail: "2 hours ago",
-  },
+const recentActivity: ActivityItem[] = [
+  { title: "Invoice generated", detail: "14 min", category: "Billing" },
+  { title: "Pre-bookings", detail: "31 min", category: "Check-ins" },
+  { title: "Billing updated", detail: "1 hr", category: "Billing" },
+  { title: "Checkout approved", detail: "2 hr", category: "Check-ins" },
+  { title: "Complaint resolved", detail: "2 hr", category: "Support" },
+  { title: "Ticket assigned", detail: "3 hr", category: "Support" },
 ];
+
+const activityFilters: ActivityCategory[] = ["All", "Billing", "Check-ins", "Support"];
 
 function metricToneClasses(tone: "sky" | "emerald" | "amber" | "slate") {
   if (tone === "sky") {
@@ -50,19 +57,69 @@ function metricToneClasses(tone: "sky" | "emerald" | "amber" | "slate") {
 }
 
 export default function AdminPage() {
+  const router = useRouter();
+  const [activeFilter, setActiveFilter] = useState<ActivityCategory>("All");
+
+  const filteredActivity = useMemo(() => {
+    if (activeFilter === "All") {
+      return recentActivity;
+    }
+    return recentActivity.filter((item) => item.category === activeFilter);
+  }, [activeFilter]);
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/admin/auth/logout", {
+        method: "POST",
+      });
+    } finally {
+      router.replace("/admin/login");
+      router.refresh();
+      window.location.replace("/admin/login");
+    }
+  };
+
   return (
     <DashboardLayout>
       <section className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-feature)] sm:p-8">
-        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--color-sky)]">
-          Admin Overview
-        </p>
-        <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--color-text-title)] sm:text-4xl">
-          Welcome back, Arjun
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm text-[var(--color-text-muted)] sm:text-base">
-          Track occupancy, payments, and operations from one central dashboard.
-          This page is ready to plug into real backend data.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-3xl font-black tracking-tight text-[var(--color-text-title)] sm:text-4xl">
+            Dashboard
+          </h1>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="cursor-pointer rounded-2xl bg-[var(--color-emerald)] px-5 py-2 text-sm font-bold text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)] transition hover:bg-[var(--color-emerald-hover)]"
+            >
+              New Invoice
+            </button>
+            <button
+              type="button"
+              className="cursor-pointer rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2 text-sm font-bold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)]"
+            >
+              Add Tenant
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="cursor-pointer rounded-2xl border border-[rgba(198,0,61,0.35)] bg-[rgba(198,0,61,0.08)] px-5 py-2 text-sm font-bold text-[var(--color-brand)] transition hover:bg-[rgba(198,0,61,0.16)]"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-3">
+          {quickActions.map((action) => (
+            <Link
+              key={action.label}
+              href={action.href}
+              className="cursor-pointer rounded-full border border-[var(--color-border)] bg-[var(--color-surface-alt)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)]"
+            >
+              {action.label}
+            </Link>
+          ))}
+        </div>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {metrics.map((metric) => (
@@ -86,43 +143,35 @@ export default function AdminPage() {
         </div>
       </section>
 
-      <section className="mt-8 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
         <article className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-feature)]">
-          <h2 className="text-xl font-black text-[var(--color-text-title)]">
-            Quick Actions
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Common admin tasks to speed up day-to-day operations.
-          </p>
-
-          <div className="mt-5 grid gap-3">
-            {quickActions.map((action) => (
-              <Link
-                key={action.label}
-                href={action.href}
-                className="cursor-pointer flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-text-primary)]"
-              >
-                <span>{action.label}</span>
-                <span className="text-base" aria-hidden="true">
-                  +
-                </span>
-              </Link>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-xl font-black text-[var(--color-text-title)]">Activity</h2>
+            <div className="flex flex-wrap gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-alt)] p-1">
+              {activityFilters.map((filter) => {
+                const isActive = filter === activeFilter;
+                return (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setActiveFilter(filter)}
+                    className={`cursor-pointer rounded-full px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] transition ${
+                      isActive
+                        ? "bg-[var(--color-brand)] text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)]"
+                        : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </article>
-
-        <article className="rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-feature)]">
-          <h2 className="text-xl font-black text-[var(--color-text-title)]">
-            Recent Activity
-          </h2>
-          <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            Latest events in your PG management workflow.
-          </p>
 
           <ul className="mt-5 space-y-3">
-            {recentActivity.map((activity) => (
+            {filteredActivity.map((activity) => (
               <li
-                key={activity.title}
+                key={`${activity.title}-${activity.detail}`}
                 className="flex items-start justify-between gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3"
               >
                 <p className="text-sm font-semibold text-[var(--color-text-secondary)]">
@@ -135,6 +184,8 @@ export default function AdminPage() {
             ))}
           </ul>
         </article>
+
+        <DashboardPulse />
       </section>
     </DashboardLayout>
   );

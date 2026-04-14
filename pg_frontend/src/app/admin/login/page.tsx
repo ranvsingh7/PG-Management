@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
@@ -178,15 +178,15 @@ export default function AdminLoginPage() {
     <>
       <AuthShell
         title="Admin Login"
-        subtitle="Access your EasyPG admin dashboard and manage your PG operations."
-        footerText="New to EasyPG?"
+        subtitle="Access"
+        footerText="New here?"
         footerLinkLabel="Create account"
         footerHref="/admin/signup"
       >
         <button
           type="button"
           onClick={handleGoogleLogin}
-          className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm font-bold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)]"
+          className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-glass)] px-4 py-3 text-sm font-bold text-[var(--color-text-secondary)] backdrop-blur transition hover:bg-[var(--color-surface-soft)]"
         >
           <GoogleIcon />
           Continue with Google
@@ -194,7 +194,7 @@ export default function AdminLoginPage() {
 
         <div className="my-5 flex items-center gap-3 text-xs font-bold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">
           <span className="h-px flex-1 bg-[var(--color-border)]" />
-          <span>or login with email</span>
+          <span>or</span>
           <span className="h-px flex-1 bg-[var(--color-border)]" />
         </div>
 
@@ -204,7 +204,7 @@ export default function AdminLoginPage() {
             type="email"
             value={form.email}
             onChange={(value) => setForm((prev) => ({ ...prev, email: value }))}
-            placeholder="eg. admin@easypg.app"
+            placeholder="Email"
             required
           />
           <Field
@@ -212,18 +212,18 @@ export default function AdminLoginPage() {
             type="password"
             value={form.password}
             onChange={(value) => setForm((prev) => ({ ...prev, password: value }))}
-            placeholder="Enter your password"
+            placeholder="Password"
             required
           />
 
           <div className="-mt-1 flex items-center justify-end">
-            <Link href="/admin/signup" className="text-xs font-semibold text-[var(--color-sky)] hover:text-[var(--color-sky-strong)]">
+            <Link href="/admin/signup" className="text-xs font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]">
               Forgot password?
             </Link>
           </div>
 
           {error ? (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+            <p className="rounded-xl border border-[rgba(198,0,61,0.25)] bg-[rgba(198,0,61,0.1)] px-4 py-3 text-sm font-medium text-[var(--color-brand)]">
               {error}
             </p>
           ) : null}
@@ -262,7 +262,7 @@ function Field({ label, value, onChange, type = "text", placeholder, required = 
         type={type}
         placeholder={placeholder}
         required={required}
-        className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-sky)] focus:ring-2 focus:ring-[var(--color-sky-soft)]"
+        className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-glass)] px-4 py-3 text-sm text-[var(--color-text-primary)] outline-none backdrop-blur transition focus:border-[var(--color-brand)] focus:ring-2 focus:ring-[var(--color-emerald-soft)]"
       />
     </label>
   );

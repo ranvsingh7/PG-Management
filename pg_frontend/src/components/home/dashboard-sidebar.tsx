@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -60,8 +60,8 @@ const items: SidebarItem[] = [
   },
   {
     label: "Electricity Billing",
-    match: () => false,
-    inactive: true,
+    href: "/admin/electricity",
+    match: (pathname) => pathname.startsWith("/admin/electricity"),
     icon: (
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-5 w-5">
         <path
@@ -180,45 +180,70 @@ export function DashboardSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="h-full min-h-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-feature)]">
-      <nav className="h-full min-h-0 space-y-1 overflow-y-auto p-4">
-        {items.map((item) => (
+    <aside className="flex h-full min-h-0 flex-col rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-feature)]">
+      <div className="flex items-center gap-3 border-b border-[var(--color-border)] p-4">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--color-emerald-soft)] text-[var(--color-emerald-strong)]">
+          <BuildingIcon />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-[var(--color-text-title)]">Portfolio</p>
+          <p className="text-xs text-[var(--color-text-muted)]">Bengaluru Cluster</p>
+        </div>
+      </div>
+
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        {items.map((item) =>
           item.inactive ? (
             <div
               key={item.label}
-              className="flex items-center justify-between gap-2 rounded-lg px-4 py-3 text-[var(--color-text-muted)] opacity-70"
+              className="flex items-center justify-between gap-2 rounded-xl px-3 py-3 text-[var(--color-text-muted)] opacity-70"
               title="Coming soon"
             >
               <div className="flex min-w-0 items-center gap-2">
-                {item.icon}
-                <span className="whitespace-nowrap">{item.label}</span>
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)]">
+                  {item.icon}
+                </span>
+                <span className="whitespace-nowrap text-sm font-medium">{item.label}</span>
               </div>
-              <span className="shrink-0 whitespace-nowrap rounded-full border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1 py-0 text-[8px] font-medium uppercase tracking-[0.04em] text-[var(--color-text-muted)] opacity-80">
-                    Coming Soon
-                  </span>
+              <span className="shrink-0 whitespace-nowrap rounded-full border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-muted)]">
+                Soon
+              </span>
             </div>
           ) : (
             <Link
               key={item.label}
               href={item.href || "/admin"}
               aria-current={item.match(pathname) ? "page" : undefined}
-              className={`cursor-pointer flex items-center justify-between gap-3 rounded-lg px-4 py-3 transition-colors ${
+              className={`group flex items-center justify-between gap-3 rounded-xl px-3 py-3 transition-colors ${
                 item.match(pathname)
-                  ? "bg-[var(--color-sky-soft)] text-[var(--color-sky)] font-medium"
+                  ? "bg-[var(--color-emerald-soft)] text-[var(--color-emerald-strong)]"
                   : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-soft)]"
               }`}
             >
               <div className="flex items-center gap-3">
-                {item.icon}
-                <span>{item.label}</span>
+                <span
+                  className={`flex h-9 w-9 items-center justify-center rounded-xl border ${
+                    item.match(pathname)
+                      ? "border-[var(--color-emerald-soft)] bg-[var(--color-emerald-soft)]"
+                      : "border-[var(--color-border)] bg-[var(--color-surface)]"
+                  }`}
+                >
+                  {item.icon}
+                </span>
+                <span className="text-sm font-medium">{item.label}</span>
               </div>
+              {item.match(pathname) ? (
+                <span className="h-2 w-2 rounded-full bg-[var(--color-emerald)]" />
+              ) : null}
             </Link>
           )
-        ))}
+        )}
+      </nav>
 
+      <div className="border-t border-[var(--color-border)] p-4">
         <a
           href="#"
-          className="cursor-default mt-2 flex items-center justify-between gap-3 rounded-lg border border-[var(--color-upgrade-border)] bg-[linear-gradient(to_right,var(--color-upgrade-from),var(--color-upgrade-to))] px-4 py-3 text-[var(--color-upgrade-text)]"
+          className="cursor-default flex items-center justify-between gap-3 rounded-2xl border border-[var(--color-upgrade-border)] bg-[linear-gradient(to_right,var(--color-upgrade-from),var(--color-upgrade-to))] px-4 py-3 text-[var(--color-upgrade-text)]"
         >
           <div className="flex items-center gap-3">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-5 w-5">
@@ -234,7 +259,7 @@ export function DashboardSidebar() {
           </div>
           <TrendingIcon className="h-4 w-4 text-[var(--color-upgrade-arrow)]" />
         </a>
-      </nav>
+      </div>
     </aside>
   );
 }

@@ -101,6 +101,46 @@ const toPrettyDate = (value: string) => {
   });
 };
 
+const getInvoiceViewData = (invoice: InvoiceRow) => {
+  const invoiceNumber = String(invoice.invoice_number || "").trim() || "INV-2026-0001";
+  const tenantName = String(invoice.tenant_name || "").trim() || "Walk-in Tenant";
+  const buildingName = String(invoice.building_name || "").trim() || "Sunrise Residency";
+  const roomNumber = String(invoice.room_number || "").trim() || "101";
+  const period = String(invoice.period || "").trim() || "2026-04";
+  const dueDate = toPrettyDate(invoice.due_date) === "-" ? "30 Apr 2026" : toPrettyDate(invoice.due_date);
+  const rawRent = Number(invoice.rent_amount || 0);
+  const rawElectricity = Number(invoice.electricity_amount || 0);
+  const rawSecurity = Number(invoice.security_deposit_amount || 0);
+
+  const rentAmount = rawRent > 0 ? rawRent : 0;
+  const electricityAmount = rawElectricity > 0 ? rawElectricity : 0;
+  const securityAmount = rawSecurity > 0 ? rawSecurity : 0;
+
+  const subtotal = Number((rentAmount + electricityAmount + securityAmount).toFixed(2));
+  const totalAmount = Number(invoice.amount || 0) > 0 ? Number(invoice.amount || 0) : subtotal;
+  const paidAmount = Number(invoice.paid_amount || 0);
+  const outstandingAmount =
+    Number(invoice.outstanding_amount || 0) > 0
+      ? Number(invoice.outstanding_amount || 0)
+      : Math.max(Number((totalAmount - paidAmount).toFixed(2)), 0);
+
+  return {
+    invoiceNumber,
+    tenantName,
+    buildingName,
+    roomNumber,
+    period,
+    dueDate,
+    rentAmount,
+    electricityAmount,
+    securityAmount,
+    subtotal,
+    totalAmount,
+    paidAmount,
+    outstandingAmount,
+  };
+};
+
 const statusBadgeClass: Record<InvoiceStatus, string> = {
   pending: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
   paid: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
@@ -292,36 +332,42 @@ export default function InvoicesPage() {
     return data as InvoiceRow;
   };
 
-  const onViewInvoice = async (invoiceId: string) => {
-    setActionLoadingId(invoiceId);
+  const setEditFieldsFromInvoice = (invoice: InvoiceRow) => {
+    setEditInvoice(invoice);
+    setEditRentAmount(String(Number(invoice.rent_amount || 0)));
+    setEditElectricityAmount(String(Number(invoice.electricity_amount || 0)));
+    setEditSecurityDepositPaidAmount(String(Number(invoice.security_deposit_paid_amount || 0)));
+    setEditDueDate(String(invoice.due_date || "").slice(0, 10));
+    setEditStatus(invoice.status || "pending");
+  };
+
+  const onViewInvoice = async (invoice: InvoiceRow) => {
+    setActionLoadingId(invoice.id);
     setError(null);
     setSuccess(null);
+    setViewInvoice(invoice);
 
     try {
-      const invoice = await loadInvoiceById(invoiceId);
-      setViewInvoice(invoice);
+      const freshInvoice = await loadInvoiceById(invoice.id);
+      setViewInvoice(freshInvoice);
     } catch {
-      setError("Unable to view invoice right now.");
+      // Keep the local snapshot for viewing.
     } finally {
       setActionLoadingId(null);
     }
   };
 
-  const onEditInvoice = async (invoiceId: string) => {
-    setActionLoadingId(invoiceId);
+  const onEditInvoice = async (invoice: InvoiceRow) => {
+    setActionLoadingId(invoice.id);
     setError(null);
     setSuccess(null);
+    setEditFieldsFromInvoice(invoice);
 
     try {
-      const invoice = await loadInvoiceById(invoiceId);
-      setEditInvoice(invoice);
-      setEditRentAmount(String(Number(invoice.rent_amount || 0)));
-      setEditElectricityAmount(String(Number(invoice.electricity_amount || 0)));
-      setEditSecurityDepositPaidAmount(String(Number(invoice.security_deposit_paid_amount || 0)));
-      setEditDueDate(String(invoice.due_date || "").slice(0, 10));
-      setEditStatus(invoice.status || "pending");
+      const freshInvoice = await loadInvoiceById(invoice.id);
+      setEditFieldsFromInvoice(freshInvoice);
     } catch {
-      setError("Unable to load invoice for edit right now.");
+      // Keep local data if refresh fails.
     } finally {
       setActionLoadingId(null);
     }
@@ -417,6 +463,203 @@ export default function InvoicesPage() {
     } finally {
       setActionLoadingId(null);
     }
+  };
+
+  const onDownloadInvoice = (invoice: InvoiceRow) => {
+    const view = getInvoiceViewData(invoice);
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Invoice ${view.invoiceNumber}</title>
+    <style>
+      body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 32px; }
+      .container { max-width: 820px; margin: 0 auto; }
+      .header { display: flex; justify-content: space-between; gap: 24px; }
+      .title { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+      .muted { color: #6b7280; font-size: 12px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+      th { text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; color: #6b7280; }
+      .total { display: flex; justify-content: space-between; font-weight: 700; margin-top: 12px; }
+      .right { text-align: right; }
+      .section { margin-top: 20px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div>
+          <div class="title">INVOICE</div>
+          <div class="muted">PG Management Services</div>
+          <div class="muted">Billing and Collections Desk</div>
+        </div>
+        <div class="card">
+          <div class="muted">Invoice #</div>
+          <div>${view.invoiceNumber}</div>
+          <div class="muted" style="margin-top:8px;">Period</div>
+          <div>${view.period}</div>
+          <div class="muted" style="margin-top:8px;">Due Date</div>
+          <div>${view.dueDate}</div>
+        </div>
+      </div>
+
+      <div class="section grid">
+        <div class="card">
+          <div class="muted">Bill To</div>
+          <div style="margin-top:6px; font-weight:700;">${view.tenantName}</div>
+          <div class="muted">${view.buildingName}</div>
+          <div class="muted">Room ${view.roomNumber}</div>
+        </div>
+        <div class="card">
+          <div class="muted">Payment Snapshot</div>
+          <div style="margin-top:6px;">Paid: ${formatCurrency(view.paidAmount)}</div>
+          <div style="margin-top:4px;">Outstanding: ${formatCurrency(view.outstandingAmount)}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th class="right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Monthly Rent</td>
+            <td class="right">${formatCurrency(view.rentAmount)}</td>
+          </tr>
+          <tr>
+            <td>Electricity Charges</td>
+            <td class="right">${formatCurrency(view.electricityAmount)}</td>
+          </tr>
+          ${
+            view.securityAmount > 0
+              ? `<tr><td>Security Deposit</td><td class="right">${formatCurrency(view.securityAmount)}</td></tr>`
+              : ""
+          }
+        </tbody>
+      </table>
+
+      <div class="section card">
+        <div class="total"><span>Subtotal</span><span>${formatCurrency(view.subtotal)}</span></div>
+        <div class="total"><span>Total Invoice</span><span>${formatCurrency(view.totalAmount)}</span></div>
+      </div>
+    </div>
+  </body>
+</html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Invoice-${view.invoiceNumber}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const onPrintInvoice = (invoice: InvoiceRow) => {
+    const view = getInvoiceViewData(invoice);
+    const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Invoice ${view.invoiceNumber}</title>
+    <style>
+      body { font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 32px; }
+      .container { max-width: 820px; margin: 0 auto; }
+      .header { display: flex; justify-content: space-between; gap: 24px; }
+      .title { font-size: 28px; font-weight: 800; margin-bottom: 4px; }
+      .muted { color: #6b7280; font-size: 12px; }
+      .card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; text-align: left; }
+      th { text-transform: uppercase; font-size: 11px; letter-spacing: 0.08em; color: #6b7280; }
+      .total { display: flex; justify-content: space-between; font-weight: 700; margin-top: 12px; }
+      .right { text-align: right; }
+      .section { margin-top: 20px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div>
+          <div class="title">INVOICE</div>
+          <div class="muted">PG Management Services</div>
+          <div class="muted">Billing and Collections Desk</div>
+        </div>
+        <div class="card">
+          <div class="muted">Invoice #</div>
+          <div>${view.invoiceNumber}</div>
+          <div class="muted" style="margin-top:8px;">Period</div>
+          <div>${view.period}</div>
+          <div class="muted" style="margin-top:8px;">Due Date</div>
+          <div>${view.dueDate}</div>
+        </div>
+      </div>
+
+      <div class="section grid">
+        <div class="card">
+          <div class="muted">Bill To</div>
+          <div style="margin-top:6px; font-weight:700;">${view.tenantName}</div>
+          <div class="muted">${view.buildingName}</div>
+          <div class="muted">Room ${view.roomNumber}</div>
+        </div>
+        <div class="card">
+          <div class="muted">Payment Snapshot</div>
+          <div style="margin-top:6px;">Paid: ${formatCurrency(view.paidAmount)}</div>
+          <div style="margin-top:4px;">Outstanding: ${formatCurrency(view.outstandingAmount)}</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th class="right">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Monthly Rent</td>
+            <td class="right">${formatCurrency(view.rentAmount)}</td>
+          </tr>
+          <tr>
+            <td>Electricity Charges</td>
+            <td class="right">${formatCurrency(view.electricityAmount)}</td>
+          </tr>
+          ${
+            view.securityAmount > 0
+              ? `<tr><td>Security Deposit</td><td class="right">${formatCurrency(view.securityAmount)}</td></tr>`
+              : ""
+          }
+        </tbody>
+      </table>
+
+      <div class="section card">
+        <div class="total"><span>Subtotal</span><span>${formatCurrency(view.subtotal)}</span></div>
+        <div class="total"><span>Total Invoice</span><span>${formatCurrency(view.totalAmount)}</span></div>
+      </div>
+    </div>
+  </body>
+</html>`;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      setError("Unable to open print window. Please allow pop-ups.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   };
 
   return (
@@ -554,7 +797,7 @@ export default function InvoicesPage() {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => onViewInvoice(invoice.id)}
+                            onClick={() => onViewInvoice(invoice)}
                             disabled={actionLoadingId === invoice.id}
                             aria-label="View Invoice"
                             title="View Invoice"
@@ -567,7 +810,7 @@ export default function InvoicesPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => onEditInvoice(invoice.id)}
+                            onClick={() => onEditInvoice(invoice)}
                             disabled={actionLoadingId === invoice.id}
                             aria-label="Edit Invoice"
                             title="Edit Invoice"
@@ -576,6 +819,32 @@ export default function InvoicesPage() {
                             <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
                               <path d="M12 20h9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                               <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDownloadInvoice(invoice)}
+                            aria-label="Download Invoice"
+                            title="Download Invoice"
+                            className="cursor-pointer inline-flex h-8 w-8 items-center justify-center rounded-md text-emerald-700 hover:bg-slate-100 hover:text-emerald-900"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+                              <path d="M12 3v12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                              <path d="m7 10 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M5 21h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onPrintInvoice(invoice)}
+                            aria-label="Print Invoice"
+                            title="Print/PDF"
+                            className="cursor-pointer inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+                              <path d="M7 8V4h10v4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                              <rect x="4" y="9" width="16" height="8" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                              <path d="M7 17v3h10v-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             </svg>
                           </button>
                           <button
@@ -646,39 +915,35 @@ export default function InvoicesPage() {
         {viewInvoice ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
             <div className="w-full max-w-4xl rounded-2xl border border-[var(--color-border)] bg-white shadow-xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <div className="flex flex-wrap items-center justify-between border-b border-slate-200 px-6 py-4">
                 <p className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Invoice Preview</p>
-                <button
-                  type="button"
-                  onClick={() => setViewInvoice(null)}
-                  className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onDownloadInvoice(viewInvoice)}
+                    className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
+                  >
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onPrintInvoice(viewInvoice)}
+                    className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
+                  >
+                    Print/PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewInvoice(null)}
+                    className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
               {(() => {
-                const invoiceNumber = String(viewInvoice.invoice_number || "").trim() || "INV-2026-0001";
-                const tenantName = String(viewInvoice.tenant_name || "").trim() || "Walk-in Tenant";
-                const buildingName = String(viewInvoice.building_name || "").trim() || "Sunrise Residency";
-                const roomNumber = String(viewInvoice.room_number || "").trim() || "101";
-                const period = String(viewInvoice.period || "").trim() || "2026-04";
-                const dueDate = toPrettyDate(viewInvoice.due_date) === "-" ? "30 Apr 2026" : toPrettyDate(viewInvoice.due_date);
-
-                const rawRent = Number(viewInvoice.rent_amount || 0);
-                const rawElectricity = Number(viewInvoice.electricity_amount || 0);
-                const rawSecurity = Number(viewInvoice.security_deposit_amount || 0);
-
-                const rentAmount = rawRent > 0 ? rawRent : 8000;
-                const electricityAmount = rawElectricity > 0 ? rawElectricity : 1200;
-                const securityAmount = rawSecurity > 0 ? rawSecurity : 0;
-
-                const subtotal = Number((rentAmount + electricityAmount + securityAmount).toFixed(2));
-                const totalAmount = Number(viewInvoice.amount || 0) > 0 ? Number(viewInvoice.amount || 0) : subtotal;
-                const paidAmount = Number(viewInvoice.paid_amount || 0);
-                const outstandingAmount = Number(viewInvoice.outstanding_amount || 0) > 0
-                  ? Number(viewInvoice.outstanding_amount || 0)
-                  : Math.max(Number((totalAmount - paidAmount).toFixed(2)), 0);
+                const view = getInvoiceViewData(viewInvoice);
 
                 return (
                   <div className="p-6 sm:p-8">
@@ -691,9 +956,9 @@ export default function InvoicesPage() {
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
                         <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Invoice Info</p>
                         <div className="mt-2 space-y-1 text-slate-700">
-                          <p><span className="font-semibold">Invoice #:</span> {invoiceNumber}</p>
-                          <p><span className="font-semibold">Period:</span> {period}</p>
-                          <p><span className="font-semibold">Due Date:</span> {dueDate}</p>
+                          <p><span className="font-semibold">Invoice #:</span> {view.invoiceNumber}</p>
+                          <p><span className="font-semibold">Period:</span> {view.period}</p>
+                          <p><span className="font-semibold">Due Date:</span> {view.dueDate}</p>
                           <p className="capitalize"><span className="font-semibold">Status:</span> {viewInvoice.effective_status || "pending"}</p>
                         </div>
                       </div>
@@ -702,15 +967,15 @@ export default function InvoicesPage() {
                     <div className="mt-6 grid gap-4 sm:grid-cols-2">
                       <div className="rounded-xl border border-slate-200 p-4 text-sm">
                         <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Bill To</p>
-                        <p className="mt-2 font-semibold text-slate-900">{tenantName}</p>
-                        <p className="text-slate-600">{buildingName}</p>
-                        <p className="text-slate-600">Room {roomNumber}</p>
+                        <p className="mt-2 font-semibold text-slate-900">{view.tenantName}</p>
+                        <p className="text-slate-600">{view.buildingName}</p>
+                        <p className="text-slate-600">Room {view.roomNumber}</p>
                       </div>
                       <div className="rounded-xl border border-slate-200 p-4 text-sm">
                         <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Payment Snapshot</p>
                         <div className="mt-2 space-y-1">
-                          <p className="text-slate-700"><span className="font-semibold">Paid:</span> {formatCurrency(paidAmount)}</p>
-                          <p className="text-rose-700"><span className="font-semibold">Outstanding:</span> {formatCurrency(outstandingAmount)}</p>
+                          <p className="text-slate-700"><span className="font-semibold">Paid:</span> {formatCurrency(view.paidAmount)}</p>
+                          <p className="text-rose-700"><span className="font-semibold">Outstanding:</span> {formatCurrency(view.outstandingAmount)}</p>
                         </div>
                       </div>
                     </div>
@@ -726,16 +991,16 @@ export default function InvoicesPage() {
                         <tbody className="divide-y divide-slate-100">
                           <tr>
                             <td className="px-4 py-3 text-slate-700">Monthly Rent</td>
-                            <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(rentAmount)}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(view.rentAmount)}</td>
                           </tr>
                           <tr>
                             <td className="px-4 py-3 text-slate-700">Electricity Charges</td>
-                            <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(electricityAmount)}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(view.electricityAmount)}</td>
                           </tr>
-                          {securityAmount > 0 ? (
+                          {view.securityAmount > 0 ? (
                             <tr>
                               <td className="px-4 py-3 text-slate-700">Security Deposit</td>
-                              <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(securityAmount)}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(view.securityAmount)}</td>
                             </tr>
                           ) : null}
                         </tbody>
@@ -745,17 +1010,13 @@ export default function InvoicesPage() {
                     <div className="mt-6 ml-auto w-full max-w-sm rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
                       <div className="flex items-center justify-between text-slate-700">
                         <span>Subtotal</span>
-                        <span className="font-semibold">{formatCurrency(subtotal)}</span>
+                        <span className="font-semibold">{formatCurrency(view.subtotal)}</span>
                       </div>
                       <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 text-base font-bold text-slate-900">
                         <span>Total Invoice</span>
-                        <span>{formatCurrency(totalAmount)}</span>
+                        <span>{formatCurrency(view.totalAmount)}</span>
                       </div>
                     </div>
-
-                    <p className="mt-6 text-xs text-slate-500">
-                      This is a system generated invoice preview. Dummy placeholders are shown when any invoice field is missing.
-                    </p>
                   </div>
                 );
               })()}
