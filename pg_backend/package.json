@@ -1,0 +1,21 @@
+{
+  "name": "pg_backend",
+  "version": "1.0.0",
+  "description": "PG admin building management backend",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "google-auth-library": "^10.6.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^8.13.2",
+    "uuid": "^11.1.0"
+  }
+}
