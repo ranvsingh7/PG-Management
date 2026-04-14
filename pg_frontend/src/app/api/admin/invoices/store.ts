@@ -5,6 +5,18 @@ import { randomUUID } from "crypto";
 export type InvoiceStatus = "pending" | "paid" | "partial";
 export type EffectiveStatus = "pending" | "paid" | "partial" | "overdue";
 
+export type PaymentMethod = "cash" | "upi" | "bank" | "card" | "wallet";
+
+export type PaymentRecord = {
+  id: string;
+  amount: number;
+  paid_total: number;
+  paid_at: string;
+  method: PaymentMethod;
+  status: "success" | "failed";
+  note?: string;
+};
+
 export type StoredInvoice = {
   id: string;
   invoice_number: string;
@@ -23,6 +35,7 @@ export type StoredInvoice = {
   effective_status: EffectiveStatus;
   paid_amount: number;
   outstanding_amount: number;
+  payment_history: PaymentRecord[];
   is_first_invoice?: boolean;
 };
 
@@ -148,6 +161,7 @@ const createSeedInvoice = (period: string, building: { id: string; name: string 
     effective_status: "pending",
     paid_amount: 0,
     outstanding_amount: 0,
+    payment_history: [],
     is_first_invoice: isFirst,
   };
 
@@ -271,6 +285,64 @@ export const updateInvoice = async (
 
   const computed = computeAmounts(next);
   const updated = { ...next, ...computed };
+  store.invoices[index] = updated;
+  await writeStore(store);
+  return updated;
+};
+
+export const addPayment = async (invoiceId: string, payload: {
+  amount: number;
+  method: PaymentMethod;
+  paid_at?: string;
+  note?: string;
+  status?: "success" | "failed";
+}) => {
+  const store = await readStore();
+  const index = store.invoices.findIndex((invoice) => invoice.id === invoiceId);
+  if (index < 0) {
+    return null;
+  }
+
+  const invoice = store.invoices[index];
+  const amount = Number(payload.amount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+
+  const paidAt = payload.paid_at ? new Date(payload.paid_at) : new Date();
+  const paidAtIso = Number.isNaN(paidAt.getTime()) ? new Date().toISOString() : paidAt.toISOString();
+  const status = payload.status || "success";
+
+  const nextPaid = status === "success"
+    ? Number((toNumber(invoice.paid_amount) + amount).toFixed(2))
+    : toNumber(invoice.paid_amount);
+
+  const computedAmount = computeAmounts({
+    ...invoice,
+    paid_amount: nextPaid,
+  });
+
+  const nextStatus: InvoiceStatus =
+    computedAmount.paid_amount >= computedAmount.amount ? "paid" : computedAmount.paid_amount > 0 ? "partial" : "pending";
+
+  const paymentRecord: PaymentRecord = {
+    id: randomUUID(),
+    amount,
+    paid_total: nextPaid,
+    paid_at: paidAtIso,
+    method: payload.method,
+    status,
+    note: payload.note || "",
+  };
+
+  const updated: StoredInvoice = {
+    ...invoice,
+    paid_amount: nextPaid,
+    status: nextStatus,
+    payment_history: [paymentRecord, ...(invoice.payment_history || [])],
+    ...computeAmounts({ ...invoice, paid_amount: nextPaid, status: nextStatus }),
+  };
+
   store.invoices[index] = updated;
   await writeStore(store);
   return updated;

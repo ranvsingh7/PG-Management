@@ -6,6 +6,7 @@ import {
   deleteInvoiceById,
   getInvoiceById,
   getInvoices,
+  getInvoicesForPeriod,
   updateInvoiceById
 } from './invoice.store.js';
 import { getOrCreateInvoiceSetting, updateInvoiceSetting } from './invoice-setting.store.js';
@@ -38,13 +39,41 @@ const parsePeriod = (value) => {
   };
 };
 
-const toStartOfDayTs = (value) => {
+const parseDateInput = (value) => {
   if (!value) {
     return null;
   }
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const raw = String(value).trim();
+  if (!raw) {
+    return null;
+  }
+
+  const isoDate = new Date(raw);
+  if (!Number.isNaN(isoDate.getTime())) {
+    return isoDate;
+  }
+
+  const match = raw.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    }
+  }
+
+  return null;
+};
+
+const toStartOfDayTs = (value) => {
+  const date = parseDateInput(value);
+  if (!date) {
     return null;
   }
 
@@ -53,7 +82,7 @@ const toStartOfDayTs = (value) => {
 
 const isTenantActiveInPeriod = (tenant, periodFromTs, periodToTs) => {
   const checkInTs = toStartOfDayTs(tenant.check_in_date);
-  if (checkInTs === null || checkInTs > periodToTs) {
+  if (checkInTs !== null && checkInTs > periodToTs) {
     return false;
   }
 
@@ -99,6 +128,37 @@ const buildInvoiceNumber = (period, index) => {
   return `INV-${compact}-${String(index + 1).padStart(4, '0')}`;
 };
 
+const getInvoiceSequenceSeed = (invoices, period) => {
+  if (!Array.isArray(invoices) || !invoices.length) {
+    return 0;
+  }
+
+  const compact = period.replace('-', '');
+  const prefix = `INV-${compact}-`;
+  let maxSequence = 0;
+  let found = false;
+
+  for (const invoice of invoices) {
+    const invoiceNumber = String(invoice?.invoice_number || '');
+    if (!invoiceNumber.startsWith(prefix)) {
+      continue;
+    }
+
+    const suffix = invoiceNumber.slice(prefix.length);
+    const parsed = Number(suffix);
+    if (Number.isFinite(parsed)) {
+      found = true;
+      maxSequence = Math.max(maxSequence, parsed);
+    }
+  }
+
+  if (found) {
+    return maxSequence;
+  }
+
+  return invoices.length;
+};
+
 const normalizeInvoiceBreakup = (invoice) => {
   const amount = Number(invoice.amount || 0);
   const rentAmount = Number.isFinite(Number(invoice.rent_amount)) ? Number(invoice.rent_amount) : amount;
@@ -119,6 +179,7 @@ const normalizeInvoiceBreakup = (invoice) => {
           paid_total: Number(Number(entry?.paid_total || 0).toFixed(2)),
           paid_at: entry?.paid_at || new Date(),
           method: String(entry?.method || 'cash'),
+          status: String(entry?.status || 'success'),
           note: String(entry?.note || ''),
           created_by_admin_id: String(entry?.created_by_admin_id || ''),
           created_by_name: String(entry?.created_by_name || '')
@@ -243,14 +304,15 @@ export const generateInvoicesHandler = async (req, res) => {
 
     const buildingId = req.body?.building_id || null;
 
-    const [setting, buildings, tenants, existingInvoices] = await Promise.all([
+    const [setting, buildings, tenants, invoicesForPeriod, allPeriodInvoices] = await Promise.all([
       getOrCreateInvoiceSetting(ownerAccountId),
       getAllBuildings(ownerAccountId),
       getAllTenants(ownerAccountId),
-      getInvoices(ownerAccountId, { period: parsedPeriod.value, building_id: buildingId || undefined })
+      getInvoices(ownerAccountId, { period: parsedPeriod.value }),
+      getInvoicesForPeriod(parsedPeriod.value)
     ]);
 
-    const existingTenantIds = new Set(existingInvoices.map((invoice) => invoice.tenant_id));
+    const existingTenantIds = new Set(invoicesForPeriod.map((invoice) => invoice.tenant_id));
     const buildingMap = new Map(buildings.map((building) => [building.id, building]));
 
     const dueDay = Number(setting.due_day_of_month || 2);
@@ -259,15 +321,11 @@ export const generateInvoicesHandler = async (req, res) => {
     const periodToTs = Date.UTC(parsedPeriod.year, parsedPeriod.month, 0, 23, 59, 59, 999);
 
     const eligibleTenants = tenants.filter((tenant) => {
-      if (tenant.status !== 'active') {
+      if (!isTenantActiveInPeriod(tenant, periodFromTs, periodToTs)) {
         return false;
       }
 
       if (buildingId && tenant.building_id !== buildingId) {
-        return false;
-      }
-
-      if (!isTenantActiveInPeriod(tenant, periodFromTs, periodToTs)) {
         return false;
       }
 
@@ -282,13 +340,36 @@ export const generateInvoicesHandler = async (req, res) => {
       });
     }
 
+    const validTenants = eligibleTenants.filter(
+      (tenant) => tenant?.id && tenant?.name && tenant?.building_id && tenant?.room_number
+    );
+    const skippedCount = eligibleTenants.length - validTenants.length;
+
+    if (!validTenants.length) {
+      return res.status(200).json({
+        message: 'No invoices generated. Tenants are missing required data.',
+        created_count: 0,
+        skipped_count: skippedCount,
+        invoices: []
+      });
+    }
+
     const electricityCharges = await Promise.all(
-      eligibleTenants.map((tenant) =>
-        calculateElectricityChargeForTenant({ ownerAccountId, tenant, period: parsedPeriod.value })
-      )
+      validTenants.map(async (tenant) => {
+        try {
+          return await calculateElectricityChargeForTenant({
+            ownerAccountId,
+            tenant,
+            period: parsedPeriod.value
+          });
+        } catch {
+          return { amount: 0 };
+        }
+      })
     );
 
-    const records = eligibleTenants.map((tenant, index) => {
+    const sequenceSeed = getInvoiceSequenceSeed(allPeriodInvoices, parsedPeriod.value);
+    const records = validTenants.map((tenant, index) => {
       const rentAmount = Number(tenant.rent || 0);
       const electricityAmount = Number(electricityCharges[index]?.amount || 0);
       const amount = Number((rentAmount + electricityAmount).toFixed(2));
@@ -297,7 +378,7 @@ export const generateInvoicesHandler = async (req, res) => {
       return {
         id: uuidv4(),
         owner_account_id: ownerAccountId,
-        invoice_number: buildInvoiceNumber(parsedPeriod.value, existingInvoices.length + index),
+        invoice_number: buildInvoiceNumber(parsedPeriod.value, sequenceSeed + index),
         tenant_id: tenant.id,
         tenant_name: tenant.name,
         building_id: tenant.building_id,
@@ -318,10 +399,15 @@ export const generateInvoicesHandler = async (req, res) => {
     });
 
     const created = (await createManyInvoices(records)).map(normalizeInvoiceBreakup);
+    const message =
+      skippedCount > 0
+        ? `Invoices generated successfully. Skipped ${skippedCount} tenant(s) missing required data.`
+        : 'Invoices generated successfully';
 
     return res.status(201).json({
-      message: 'Invoices generated successfully',
+      message,
       created_count: created.length,
+      skipped_count: skippedCount,
       invoices: created
     });
   } catch (error) {
@@ -397,8 +483,10 @@ export const updateInvoiceStatusHandler = async (req, res) => {
   try {
     const ownerAccountId = req.admin?.accountOwnerId || req.admin?.id || 'admin';
     const invoiceId = req.params.id;
-    const status = String(req.body?.status || '').toLowerCase();
-    const rawPaidAmount = Number(req.body?.paid_amount || 0);
+  const status = String(req.body?.status || '').toLowerCase();
+  const rawPaidAmount = Number(req.body?.paid_amount || 0);
+  const paymentStatus = String(req.body?.payment_status || 'success').toLowerCase();
+  const paymentAmount = Number(req.body?.payment_amount || rawPaidAmount || 0);
 
     if (!invoiceId) {
       return res.status(400).json({ message: 'Invoice id is required' });
@@ -429,9 +517,10 @@ export const updateInvoiceStatusHandler = async (req, res) => {
     const createdByName = String(actingAdmin?.full_name || req.admin?.email || req.admin?.id || 'admin');
     const createdByAdminId = String(req.admin?.id || '');
 
-    const appendPaymentHistory = (nextPaidAmount) => {
+    const appendPaymentHistory = (nextPaidAmount, entryStatus = 'success', entryAmount = null) => {
       const delta = Number((nextPaidAmount - currentPaidAmount).toFixed(2));
-      if (!Number.isFinite(delta) || delta <= 0) {
+      const amount = entryAmount !== null ? Number(entryAmount) : delta;
+      if (!Number.isFinite(amount) || amount <= 0) {
         return currentHistory;
       }
 
@@ -439,16 +528,25 @@ export const updateInvoiceStatusHandler = async (req, res) => {
         ...currentHistory,
         {
           id: uuidv4(),
-          amount: delta,
+          amount: Number(amount.toFixed(2)),
           paid_total: Number(nextPaidAmount.toFixed(2)),
           paid_at: paymentDate,
           method: paymentMethod,
+          status: entryStatus,
           note: paymentNote,
           created_by_admin_id: createdByAdminId,
           created_by_name: createdByName
         }
       ];
     };
+
+    if (paymentStatus === 'failed') {
+      const updated = await updateInvoiceById(invoiceId, ownerAccountId, {
+        payment_history: appendPaymentHistory(currentPaidAmount, 'failed', paymentAmount)
+      });
+
+      return res.status(200).json(updated);
+    }
 
     if (status === 'paid') {
       const nextPaidAmount = amount;
@@ -457,7 +555,7 @@ export const updateInvoiceStatusHandler = async (req, res) => {
         paid_amount: nextPaidAmount,
         outstanding_amount: 0,
         security_deposit_paid_amount: securityDepositAmount,
-        payment_history: appendPaymentHistory(nextPaidAmount)
+        payment_history: appendPaymentHistory(nextPaidAmount, paymentStatus, paymentAmount || nextPaidAmount)
       });
 
       await syncFirstInvoiceSettlement({
@@ -485,7 +583,7 @@ export const updateInvoiceStatusHandler = async (req, res) => {
             securityDepositAmount
           ).toFixed(2)
         ),
-        payment_history: appendPaymentHistory(nextPaidAmount)
+        payment_history: appendPaymentHistory(nextPaidAmount, paymentStatus, paymentAmount || nextPaidAmount)
       });
 
       await syncFirstInvoiceSettlement({
@@ -722,7 +820,10 @@ export const generateFirstInvoiceHandler = async (req, res) => {
     }
 
     // Calculate prorated rent based on check-in date
-    const checkInDate = new Date(tenant.check_in_date);
+    const checkInDate = parseDateInput(tenant.check_in_date);
+    if (!checkInDate) {
+      return res.status(400).json({ message: 'Tenant check-in date is invalid.' });
+    }
     const currentYear = checkInDate.getUTCFullYear();
     const currentMonth = checkInDate.getUTCMonth();
     
@@ -748,7 +849,10 @@ export const generateFirstInvoiceHandler = async (req, res) => {
     const dueDate = new Date(Date.UTC(currentYear, currentMonth, dueDay, 0, 0, 0, 0));
     
     // Get existing invoices for invoice number and duplicate checks
-    const existingInvoices = await getInvoices(ownerAccountId, { period });
+    const [existingInvoices, allPeriodInvoices] = await Promise.all([
+      getInvoices(ownerAccountId, { period }),
+      getInvoicesForPeriod(period)
+    ]);
     const existingFirstInvoices = existingInvoices.filter(
       (item) => item.tenant_id === tenant.id && item.is_first_invoice
     );
@@ -760,7 +864,7 @@ export const generateFirstInvoiceHandler = async (req, res) => {
     }
 
     const records = [];
-    let sequence = existingInvoices.length;
+    let sequence = getInvoiceSequenceSeed(allPeriodInvoices, period);
 
     if (proratedRent > 0) {
       records.push({
@@ -823,6 +927,9 @@ export const generateFirstInvoiceHandler = async (req, res) => {
     }
 
     const created = await createManyInvoices(records);
+    if (!created.length) {
+      return res.status(409).json({ message: 'Unable to generate invoice right now. Please try again.' });
+    }
     const normalized = created.map(normalizeInvoiceBreakup);
 
     return res.status(201).json({

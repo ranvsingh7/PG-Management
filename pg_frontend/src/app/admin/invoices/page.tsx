@@ -10,6 +10,18 @@ type Building = {
 
 type InvoiceStatus = "pending" | "paid" | "partial" | "overdue";
 
+type PaymentMethod = "cash" | "upi" | "bank" | "card" | "wallet";
+
+type PaymentRecord = {
+  id: string;
+  amount: number;
+  paid_total: number;
+  paid_at: string;
+  method: PaymentMethod;
+  status: "success" | "failed";
+  note?: string;
+};
+
 type InvoiceRow = {
   id: string;
   invoice_number: string;
@@ -27,6 +39,7 @@ type InvoiceRow = {
   effective_status: InvoiceStatus;
   paid_amount: number;
   outstanding_amount: number;
+  payment_history?: PaymentRecord[];
   is_first_invoice?: boolean;
 };
 
@@ -179,6 +192,12 @@ export default function InvoicesPage() {
   const [viewInvoice, setViewInvoice] = useState<InvoiceRow | null>(null);
   const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null);
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
+  const [paymentInvoice, setPaymentInvoice] = useState<InvoiceRow | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("upi");
+  const [paymentDate, setPaymentDate] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState<"success" | "failed">("success");
+  const [paymentNote, setPaymentNote] = useState("");
 
   const [editRentAmount, setEditRentAmount] = useState("");
   const [editElectricityAmount, setEditElectricityAmount] = useState("");
@@ -300,7 +319,11 @@ export default function InvoicesPage() {
         body: JSON.stringify(body),
       });
 
-      const data = (await response.json()) as { message?: string; created_count?: number };
+      const data = (await response.json()) as {
+        message?: string;
+        created_count?: number;
+        skipped_count?: number;
+      };
 
       if (!response.ok) {
         setError(data.message || "Failed to generate invoices");
@@ -308,7 +331,10 @@ export default function InvoicesPage() {
       }
 
       const createdCount = Number(data.created_count || 0);
-      setSuccess(data.message || `Generated ${createdCount} invoice(s)`);
+      const skippedCount = Number(data.skipped_count || 0);
+      const baseMessage = data.message || `Generated ${createdCount} invoice(s)`;
+      const extra = skippedCount > 0 ? ` Skipped ${skippedCount} tenant(s).` : "";
+      setSuccess(`${baseMessage}${extra}`);
       setCurrentPage(1);
       setIsGenerateModalOpen(false);
       setTableMonth(generateMonth);
@@ -460,6 +486,62 @@ export default function InvoicesPage() {
       fetchInvoices();
     } catch {
       setError("Unable to delete invoice right now.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const openPaymentModal = (invoice: InvoiceRow) => {
+    setPaymentInvoice(invoice);
+    setPaymentAmount("");
+    setPaymentMethod("upi");
+    setPaymentStatus("success");
+    setPaymentNote("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const onSavePayment = async () => {
+    if (!paymentInvoice) {
+      return;
+    }
+
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Payment amount must be greater than 0.");
+      return;
+    }
+
+    setActionLoadingId(paymentInvoice.id);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await fetch(`/api/admin/invoices/${paymentInvoice.id}/payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          method: paymentMethod,
+          paid_at: paymentDate,
+          note: paymentNote,
+          status: paymentStatus,
+        }),
+      });
+
+      const data = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setError(data.message || "Failed to record payment.");
+        return;
+      }
+
+      setSuccess("Payment recorded.");
+      setPaymentInvoice(null);
+      fetchInvoices();
+      if (viewInvoice && viewInvoice.id === paymentInvoice.id) {
+        setViewInvoice(data as InvoiceRow);
+      }
+    } catch {
+      setError("Unable to record payment right now.");
     } finally {
       setActionLoadingId(null);
     }
@@ -836,6 +918,18 @@ export default function InvoicesPage() {
                           </button>
                           <button
                             type="button"
+                            onClick={() => openPaymentModal(invoice)}
+                            aria-label="Record Payment"
+                            title="Record Payment"
+                            className="cursor-pointer inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--color-brand)] hover:bg-slate-100"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+                              <path d="M12 2v20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => onPrintInvoice(invoice)}
                             aria-label="Print Invoice"
                             title="Print/PDF"
@@ -927,6 +1021,13 @@ export default function InvoicesPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => openPaymentModal(viewInvoice)}
+                    className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
+                  >
+                    Record Payment
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => onPrintInvoice(viewInvoice)}
                     className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
                   >
@@ -944,6 +1045,10 @@ export default function InvoicesPage() {
 
               {(() => {
                 const view = getInvoiceViewData(viewInvoice);
+
+                const payments = Array.isArray(viewInvoice.payment_history)
+                  ? viewInvoice.payment_history
+                  : [];
 
                 return (
                   <div className="p-6 sm:p-8">
@@ -1016,6 +1121,54 @@ export default function InvoicesPage() {
                         <span>Total Invoice</span>
                         <span>{formatCurrency(view.totalAmount)}</span>
                       </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Payments</p>
+                      {payments.length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500">No payments recorded.</p>
+                      ) : (
+                        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
+                          <table className="min-w-full text-sm">
+                            <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.08em] text-slate-500">
+                              <tr>
+                                <th className="px-4 py-3">Date</th>
+                                <th className="px-4 py-3">Method</th>
+                                <th className="px-4 py-3 text-right">Amount</th>
+                                <th className="px-4 py-3 text-right">Paid Total</th>
+                                <th className="px-4 py-3">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {payments.map((payment) => (
+                                <tr key={payment.id}>
+                                  <td className="px-4 py-3 text-slate-700">
+                                    {toPrettyDate(payment.paid_at)}
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-700 capitalize">{payment.method}</td>
+                                  <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                                    {formatCurrency(payment.amount)}
+                                  </td>
+                                  <td className="px-4 py-3 text-right text-slate-700">
+                                    {formatCurrency(payment.paid_total)}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span
+                                      className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                                        payment.status === "failed"
+                                          ? "bg-rose-50 text-rose-700"
+                                          : "bg-emerald-50 text-emerald-700"
+                                      }`}
+                                    >
+                                      {payment.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1114,6 +1267,96 @@ export default function InvoicesPage() {
                   className="cursor-pointer rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-60"
                 >
                   {actionLoadingId === editInvoice.id ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {paymentInvoice ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+            <div className="w-full max-w-xl rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900">Record Payment</h3>
+                  <p className="text-sm text-slate-600">{paymentInvoice.invoice_number}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaymentInvoice(null)}
+                  className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Amount
+                  <input
+                    type="number"
+                    min={0}
+                    value={paymentAmount}
+                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <SelectField
+                  label="Method"
+                  value={paymentMethod}
+                  onChange={(value) => setPaymentMethod(value as PaymentMethod)}
+                  options={[
+                    { value: "upi", label: "UPI" },
+                    { value: "cash", label: "Cash" },
+                    { value: "bank", label: "Bank Transfer" },
+                    { value: "card", label: "Card" },
+                    { value: "wallet", label: "Wallet" },
+                  ]}
+                />
+                <label className="text-sm font-medium text-slate-700">
+                  Date
+                  <input
+                    type="date"
+                    value={paymentDate}
+                    onChange={(event) => setPaymentDate(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <SelectField
+                  label="Status"
+                  value={paymentStatus}
+                  onChange={(value) => setPaymentStatus(value as "success" | "failed")}
+                  options={[
+                    { value: "success", label: "Success" },
+                    { value: "failed", label: "Failed" },
+                  ]}
+                />
+                <label className="text-sm font-medium text-slate-700 sm:col-span-2">
+                  Note
+                  <input
+                    type="text"
+                    value={paymentNote}
+                    onChange={(event) => setPaymentNote(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentInvoice(null)}
+                  className="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onSavePayment}
+                  disabled={actionLoadingId === paymentInvoice.id}
+                  className="cursor-pointer rounded-md bg-[var(--color-brand)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-brand-hover)] disabled:opacity-60"
+                >
+                  {actionLoadingId === paymentInvoice.id ? "Saving..." : "Save Payment"}
                 </button>
               </div>
             </div>

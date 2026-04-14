@@ -184,6 +184,26 @@ export default function TenantsPage() {
     [buildings, form.building_id]
   );
 
+  const selectedRoom = useMemo(() => {
+    if (!form.building_id || !form.room_number) {
+      return null;
+    }
+    return rooms.find(
+      (room) => room.building_id === form.building_id && room.room_number === form.room_number
+    );
+  }, [rooms, form.building_id, form.room_number]);
+
+  const activeCountForRoom = useMemo(() => {
+    if (!form.building_id || !form.room_number) {
+      return 0;
+    }
+    const key = `${form.building_id}::${form.room_number}`;
+    return activeTenantCountByRoom.get(key) || 0;
+  }, [activeTenantCountByRoom, form.building_id, form.room_number]);
+
+  const roomCapacity = Number(selectedRoom?.capacity || 0);
+  const isRoomFull = roomCapacity > 0 && activeCountForRoom >= roomCapacity && form.status === "active";
+
   const checkInPayablePreview = useMemo(() => {
     const rent = Number(form.rent || 0);
     const securityDeposit = Number(form.security_deposit_amount || 0);
@@ -380,7 +400,8 @@ export default function TenantsPage() {
     const buildingId = form.building_id.trim();
     const roomNumber = form.room_number.trim();
     const checkInDate = form.check_in_date;
-    const currentReading = Number(form.current_reading);
+    const readingRaw = form.current_reading.trim();
+    const currentReading = readingRaw === "" ? null : Number(readingRaw);
     const checkOutDate = form.check_out_date || null;
     const rent = Number(form.rent);
     const status = form.status;
@@ -393,8 +414,8 @@ export default function TenantsPage() {
       return;
     }
 
-    if (!editingTenantId && (!Number.isFinite(currentReading) || currentReading < 0)) {
-      const errorMessage = "Current reading is required and must be a valid non-negative number.";
+    if (currentReading !== null && (!Number.isFinite(currentReading) || currentReading < 0)) {
+      const errorMessage = "Current reading must be a valid non-negative number.";
       setFormError(errorMessage);
       showToast(errorMessage, "error");
       return;
@@ -435,22 +456,33 @@ export default function TenantsPage() {
       return;
     }
 
+    if (isRoomFull) {
+      const errorMessage =
+        "Selected room is full. Choose another room or set status to Inactive.";
+      setFormError(errorMessage);
+      showToast(errorMessage, "error");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const payload = {
-        name: fullName,
-        phone,
-        email,
-        building_id: buildingId,
-        room_number: roomNumber,
-        check_in_date: checkInDate,
-        current_reading: currentReading,
-        check_out_date: checkOutDate,
-        rent,
-        status,
-        security_deposit_amount: securityDepositAmount,
-      };
+    const payload = {
+      name: fullName,
+      phone,
+      email,
+      building_id: buildingId,
+      room_number: roomNumber,
+      check_in_date: checkInDate,
+      check_out_date: checkOutDate,
+      rent,
+      status,
+      security_deposit_amount: securityDepositAmount,
+    };
+
+    if (currentReading !== null) {
+      payload.current_reading = currentReading;
+    }
 
       const url = editingTenantId ? `/api/admin/tenants/${editingTenantId}` : "/api/admin/tenants";
       const method = editingTenantId ? "PUT" : "POST";
@@ -1057,11 +1089,10 @@ export default function TenantsPage() {
                   required
                 />
                 <Field
-                  label={editingTenantId ? "Current Reading (optional)" : "Current Reading*"}
+                  label="Current Reading (optional)"
                   value={form.current_reading}
                   onChange={(value) => setForm((prev) => ({ ...prev, current_reading: value }))}
                   type="number"
-                  required={!editingTenantId}
                   min={0}
                   placeholder="eg. 120"
                 />

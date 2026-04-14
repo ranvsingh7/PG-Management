@@ -5,8 +5,20 @@ export const createManyInvoices = async (records) => {
     return [];
   }
 
-  const created = await Invoice.insertMany(records, { ordered: false });
-  return created.map((doc) => doc.toJSON());
+  const created = [];
+  for (const record of records) {
+    try {
+      const doc = await Invoice.create(record);
+      created.push(doc.toJSON());
+    } catch (error) {
+      if (error?.code === 11000) {
+        continue;
+      }
+      continue;
+    }
+  }
+
+  return created;
 };
 
 export const getInvoices = async (ownerAccountId, filters = {}) => {
@@ -24,6 +36,9 @@ export const getInvoices = async (ownerAccountId, filters = {}) => {
 
   return Invoice.find(query).sort({ created_at: -1 }).lean();
 };
+
+export const getInvoicesForPeriod = async (period) =>
+  Invoice.find({ period }).select({ invoice_number: 1 }).lean();
 
 export const getInvoiceById = async (id, ownerAccountId) =>
   Invoice.findOne({ id, owner_account_id: ownerAccountId }).lean();

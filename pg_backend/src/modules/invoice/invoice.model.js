@@ -33,6 +33,7 @@ const invoiceSchema = new mongoose.Schema(
           paid_total: { type: Number, required: true, min: 0 },
           paid_at: { type: Date, required: true },
           method: { type: String, default: 'cash' },
+          status: { type: String, enum: ['success', 'failed'], default: 'success' },
           note: { type: String, default: '' },
           created_by_admin_id: { type: String, default: '' },
           created_by_name: { type: String, default: '' }
