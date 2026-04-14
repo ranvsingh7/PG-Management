@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -152,6 +153,8 @@ export default function TenantsPage() {
   const [successTenantId, setSuccessTenantId] = useState<string | null>(null);
   const [successTenantCheckInTotal, setSuccessTenantCheckInTotal] = useState<number>(0);
   const [isGeneratingFirstInvoice, setIsGeneratingFirstInvoice] = useState(false);
+  const [openedFromQuery, setOpenedFromQuery] = useState(false);
+  const searchParams = useSearchParams();
   const { toast, showToast } = useToast({ defaultDurationMs: 3200 });
 
   const pageSize = 10;
@@ -183,26 +186,6 @@ export default function TenantsPage() {
     () => buildings.find((building) => building.id === form.building_id),
     [buildings, form.building_id]
   );
-
-  const selectedRoom = useMemo(() => {
-    if (!form.building_id || !form.room_number) {
-      return null;
-    }
-    return rooms.find(
-      (room) => room.building_id === form.building_id && room.room_number === form.room_number
-    );
-  }, [rooms, form.building_id, form.room_number]);
-
-  const activeCountForRoom = useMemo(() => {
-    if (!form.building_id || !form.room_number) {
-      return 0;
-    }
-    const key = `${form.building_id}::${form.room_number}`;
-    return activeTenantCountByRoom.get(key) || 0;
-  }, [activeTenantCountByRoom, form.building_id, form.room_number]);
-
-  const roomCapacity = Number(selectedRoom?.capacity || 0);
-  const isRoomFull = roomCapacity > 0 && activeCountForRoom >= roomCapacity && form.status === "active";
 
   const checkInPayablePreview = useMemo(() => {
     const rent = Number(form.rent || 0);
@@ -276,6 +259,26 @@ export default function TenantsPage() {
 
     return counts;
   }, [tenants, editingTenantId, movingTenantId]);
+
+  const selectedRoom = useMemo(() => {
+    if (!form.building_id || !form.room_number) {
+      return null;
+    }
+    return rooms.find(
+      (room) => room.building_id === form.building_id && room.room_number === form.room_number
+    );
+  }, [rooms, form.building_id, form.room_number]);
+
+  const activeCountForRoom = useMemo(() => {
+    if (!form.building_id || !form.room_number) {
+      return 0;
+    }
+    const key = `${form.building_id}::${form.room_number}`;
+    return activeTenantCountByRoom.get(key) || 0;
+  }, [activeTenantCountByRoom, form.building_id, form.room_number]);
+
+  const roomCapacity = Number(selectedRoom?.capacity || 0);
+  const isRoomFull = roomCapacity > 0 && activeCountForRoom >= roomCapacity && form.status === "active";
 
   const filteredTenants = useMemo(() => {
     const query = searchText.trim().toLowerCase();
@@ -368,6 +371,20 @@ export default function TenantsPage() {
     loadBuildings();
     loadRooms();
   }, []);
+
+  useEffect(() => {
+    if (openedFromQuery) {
+      return;
+    }
+
+    if (searchParams.get("new") === "1") {
+      setFormError(null);
+      setEditingTenantId(null);
+      setForm(initialForm);
+      setIsModalOpen(true);
+      setOpenedFromQuery(true);
+    }
+  }, [searchParams, openedFromQuery]);
 
   useEffect(() => {
     if (!form.building_id) {

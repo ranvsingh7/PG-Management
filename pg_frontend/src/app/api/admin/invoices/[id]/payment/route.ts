@@ -7,6 +7,23 @@ export const dynamic = "force-dynamic";
 
 const BACKEND_URL = process.env.BACKEND_API_BASE_URL || "http://localhost:4000";
 
+const parseJsonSafely = (value: string) => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const readResponseBody = async (response: Response) => {
+  const text = await response.text();
+  return parseJsonSafely(text);
+};
+
 const getAuthHeaders = async () => {
   const token = (await cookies()).get("admin_session")?.value;
   if (!token) {
@@ -19,11 +36,12 @@ const getAuthHeaders = async () => {
 };
 
 type RouteContext = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
+    const { id } = await context.params;
     const body = (await request.json()) as {
       amount: number;
       method: "cash" | "upi" | "bank" | "card" | "wallet";
@@ -39,14 +57,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const headers = await getAuthHeaders();
     if (headers) {
       try {
-        const invoiceResponse = await fetch(`${BACKEND_URL}/api/invoices/${context.params.id}`, {
+        const invoiceResponse = await fetch(`${BACKEND_URL}/api/invoices/${id}`, {
           method: "GET",
           headers,
           cache: "no-store",
         });
-        const invoice = await invoiceResponse.json();
+        const invoice = await readResponseBody(invoiceResponse);
         if (!invoiceResponse.ok) {
-          return NextResponse.json(invoice, { status: invoiceResponse.status });
+          return NextResponse.json(invoice ?? { message: "Failed to fetch invoice" }, { status: invoiceResponse.status });
         }
 
         const currentPaid = Number(invoice.paid_amount || 0);
@@ -66,7 +84,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
                 ? "partial"
                 : "pending";
 
-        const patchResponse = await fetch(`${BACKEND_URL}/api/invoices/${context.params.id}/status`, {
+        const patchResponse = await fetch(`${BACKEND_URL}/api/invoices/${id}/status`, {
           method: "PATCH",
           headers,
           body: JSON.stringify({
@@ -80,14 +98,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
           }),
         });
 
-        const patchData = await patchResponse.json();
-        return NextResponse.json(patchData, { status: patchResponse.status });
+        const patchData = await readResponseBody(patchResponse);
+        return NextResponse.json(patchData ?? { message: "Failed to record payment" }, { status: patchResponse.status });
       } catch {
         // fallback
       }
     }
 
-    const updated = await addPayment(context.params.id, body);
+    const updated = await addPayment(id, body);
     if (!updated) {
       return NextResponse.json({ message: "Invoice not found" }, { status: 404 });
     }

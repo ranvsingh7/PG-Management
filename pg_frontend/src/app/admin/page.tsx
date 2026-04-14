@@ -89,12 +89,14 @@ export default function AdminPage() {
           <div className="flex flex-wrap gap-3">
             <button
               type="button"
+              onClick={() => router.push("/admin/invoices")}
               className="cursor-pointer rounded-2xl bg-[var(--color-emerald)] px-5 py-2 text-sm font-bold text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)] transition hover:bg-[var(--color-emerald-hover)]"
             >
               New Invoice
             </button>
             <button
               type="button"
+              onClick={() => router.push("/admin/tenants?new=1")}
               className="cursor-pointer rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-2 text-sm font-bold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)]"
             >
               Add Tenant
