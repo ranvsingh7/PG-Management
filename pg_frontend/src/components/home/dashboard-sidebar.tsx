@@ -176,7 +176,11 @@ const items: SidebarItem[] = [
   },
 ];
 
-export function DashboardSidebar() {
+type DashboardSidebarProps = {
+  onNavigate?: () => void;
+};
+
+export function DashboardSidebar({ onNavigate }: DashboardSidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -202,6 +206,7 @@ export function DashboardSidebar() {
               key={item.label}
               href={item.href || "/admin"}
               aria-current={item.match(pathname) ? "page" : undefined}
+              onClick={onNavigate}
               className={`cursor-pointer flex items-center justify-between gap-3 rounded-lg px-4 py-3 transition-colors ${
                 item.match(pathname)
                   ? "bg-[var(--color-sky-soft)] text-[var(--color-sky)] font-medium"

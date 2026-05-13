@@ -25,7 +25,12 @@ type Usage = {
   subscription: unknown;
 };
 
-export function DashboardNavbar() {
+type DashboardNavbarProps = {
+  onMenuToggle: () => void;
+  isMenuOpen: boolean;
+};
+
+export function DashboardNavbar({ onMenuToggle, isMenuOpen }: DashboardNavbarProps) {
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
 
@@ -95,6 +100,9 @@ export function DashboardNavbar() {
           <button
             type="button"
             aria-label="Open menu"
+            aria-expanded={isMenuOpen}
+            aria-controls="dashboard-mobile-sidebar"
+            onClick={onMenuToggle}
             className="cursor-pointer inline-flex h-9 w-9 items-center justify-center rounded-md text-[var(--color-text-muted)] transition hover:bg-[var(--color-surface-soft)] hover:text-[var(--color-text-primary)] lg:hidden"
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-5 w-5">
