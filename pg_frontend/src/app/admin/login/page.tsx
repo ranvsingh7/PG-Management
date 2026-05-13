@@ -91,22 +91,25 @@ export default function AdminLoginPage() {
           showToast("Google did not return a credential.", "error");
           return;
         }
+        try {
+          const authResponse = await fetch("/api/admin/auth/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id_token: credential }),
+          });
 
-        const authResponse = await fetch("/api/admin/auth/google", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id_token: credential }),
-        });
+          const result = (await authResponse.json()) as { message?: string };
 
-        const result = (await authResponse.json()) as { message?: string };
+          if (!authResponse.ok) {
+            showToast(result.message || "Google login failed.", "error");
+            return;
+          }
 
-        if (!authResponse.ok) {
-          showToast(result.message || "Google login failed.", "error");
-          return;
+          showToast("Google login successful.", "success");
+          router.replace("/admin");
+        } catch {
+          showToast("Google login failed. Please try again.", "error");
         }
-
-        showToast("Google login successful.", "success");
-        router.replace("/admin");
       },
     });
 

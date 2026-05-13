@@ -4,6 +4,7 @@ const buildingSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true, index: true },
     name: { type: String, required: true },
+    property_code: { type: String, default: '' },
     address: { type: String, required: true },
     city: { type: String, required: true },
     area: { type: String, required: true },
@@ -36,6 +37,14 @@ buildingSchema.set('toJSON', {
     return ret;
   }
 });
+
+buildingSchema.index(
+  { property_code: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { property_code: { $type: 'string', $ne: '' } }
+  }
+);
 
 const Building = mongoose.model('Building', buildingSchema);
 

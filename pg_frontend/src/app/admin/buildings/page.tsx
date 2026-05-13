@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ToastViewport, useToast } from "@/components/ui/toast";
@@ -72,6 +72,7 @@ export default function BuildingsPage() {
   const [searchText, setSearchText] = useState("");
   const { toast, showToast } = useToast({ defaultDurationMs: 3200 });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const hasLoadedInitialRef = useRef(false);
 
   const pageSize = 9;
 
@@ -84,7 +85,7 @@ export default function BuildingsPage() {
     [form.amenities]
   );
 
-  const loadBuildings = async (options?: { reset?: boolean }) => {
+  const loadBuildings = useCallback(async (options?: { reset?: boolean; pageToLoad?: number }) => {
     const reset = Boolean(options?.reset);
 
     if (reset) {
@@ -95,7 +96,7 @@ export default function BuildingsPage() {
     }
 
     try {
-      const nextPage = reset ? 1 : page + 1;
+      const nextPage = options?.pageToLoad || 1;
       const search = new URLSearchParams({
         page: String(nextPage),
         limit: String(pageSize),
@@ -135,7 +136,7 @@ export default function BuildingsPage() {
       setBuildings((prev) => (reset ? items : [...prev, ...items]));
       setPage(pagination?.page || nextPage);
       setHasNextPage(Boolean(pagination?.hasNextPage));
-      setTotalCount(Number(pagination?.total || (reset ? items.length : buildings.length + items.length)));
+      setTotalCount(Number(pagination?.total || items.length));
     } catch {
       setListError("Unable to load buildings right now.");
     } finally {
@@ -145,11 +146,23 @@ export default function BuildingsPage() {
         setIsLoadingMore(false);
       }
     }
-  };
+  }, [pageSize, searchText]);
 
   useEffect(() => {
-    loadBuildings({ reset: true });
-  }, []);
+    if (!hasLoadedInitialRef.current) {
+      hasLoadedInitialRef.current = true;
+      loadBuildings({ reset: true, pageToLoad: 1 });
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      loadBuildings({ reset: true, pageToLoad: 1 });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [loadBuildings]);
 
   useEffect(() => {
     const node = loadMoreRef.current;
@@ -165,7 +178,7 @@ export default function BuildingsPage() {
         }
 
         if (!isLoading && !isLoadingMore && hasNextPage) {
-          loadBuildings({ reset: false });
+          loadBuildings({ reset: false, pageToLoad: page + 1 });
         }
       },
       { threshold: 0.2 }
@@ -176,17 +189,7 @@ export default function BuildingsPage() {
     return () => {
       observer.disconnect();
     };
-  }, [isLoading, isLoadingMore, hasNextPage, page, searchText]);
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      loadBuildings({ reset: true });
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timeout);
-    };
-  }, [searchText]);
+  }, [isLoading, isLoadingMore, hasNextPage, page, loadBuildings]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -289,7 +292,7 @@ export default function BuildingsPage() {
       setEditingBuildingId(null);
       setIsModalOpen(false);
       showToast(editingBuildingId ? "Building updated successfully." : "Building created successfully.", "success");
-      await loadBuildings();
+      await loadBuildings({ reset: true, pageToLoad: 1 });
     } catch {
       const errorMessage = "Unable to submit form. Please try again.";
       setFormError(errorMessage);

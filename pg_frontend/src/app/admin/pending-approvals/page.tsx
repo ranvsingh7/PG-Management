@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { SelectField } from "@/components/ui/select-field";
 
@@ -42,7 +42,7 @@ export default function PendingApprovalsPage() {
   const [form, setForm] = useState<FormState>(defaultForm());
   const [formError, setFormError] = useState<string | null>(null);
 
-  const loadRows = async () => {
+  const loadRows = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -62,9 +62,9 @@ export default function PendingApprovalsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [search, status]);
 
-  useEffect(() => { loadRows(); }, [search, status]);
+  useEffect(() => { loadRows(); }, [loadRows]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

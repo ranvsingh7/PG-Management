@@ -23,7 +23,6 @@ export const allowedInputFields = [
   'agreement',
   'approval_status',
   'pg_id',
-  'password_hash',
   'moving_history',
   'security_deposit_amount'
 ];

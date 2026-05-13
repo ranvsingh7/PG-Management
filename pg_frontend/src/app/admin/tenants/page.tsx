@@ -25,6 +25,7 @@ type Room = {
 
 type Tenant = {
   id: string;
+  login_id?: string;
   name: string;
   email: string;
   phone: string;
@@ -43,6 +44,7 @@ type Tenant = {
   security_deposit_amount?: number;
   check_in_total_due?: number;
   check_in_payment_status?: "pending" | "paid";
+  onboarding_status?: "pending" | "completed";
   moving_history: MoveHistoryEntry[];
 };
 
@@ -151,6 +153,8 @@ export default function TenantsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [successTenantId, setSuccessTenantId] = useState<string | null>(null);
   const [successTenantCheckInTotal, setSuccessTenantCheckInTotal] = useState<number>(0);
+  const [successTenantLoginId, setSuccessTenantLoginId] = useState<string | null>(null);
+  const [successTenantPassword, setSuccessTenantPassword] = useState<string | null>(null);
   const [isGeneratingFirstInvoice, setIsGeneratingFirstInvoice] = useState(false);
   const { toast, showToast } = useToast({ defaultDurationMs: 3200 });
 
@@ -179,11 +183,6 @@ export default function TenantsPage() {
     return rooms.filter((room) => room.building_id === form.building_id);
   }, [rooms, form.building_id]);
 
-  const selectedBuilding = useMemo(
-    () => buildings.find((building) => building.id === form.building_id),
-    [buildings, form.building_id]
-  );
-
   const checkInPayablePreview = useMemo(() => {
     const rent = Number(form.rent || 0);
     const securityDeposit = Number(form.security_deposit_amount || 0);
@@ -192,26 +191,17 @@ export default function TenantsPage() {
       return null;
     }
 
-    // Calculate prorated rent based on remaining days in the month
     const checkInDate = new Date(form.check_in_date);
-    const year = checkInDate.getFullYear();
-    const month = checkInDate.getMonth();
-    
-    // Get last day of the month
-    const lastDayOfMonth = new Date(year, month + 1, 0);
-    const daysInMonth = lastDayOfMonth.getDate();
-    
-    // Calculate days remaining (including check-in day)
-    const checkInDay = checkInDate.getDate();
-    const daysRemaining = daysInMonth - checkInDay + 1;
-    
-    // Calculate prorated rent
-    const proratedRent = Number(((rent / daysInMonth) * daysRemaining).toFixed(2));
+    if (Number.isNaN(checkInDate.getTime())) {
+      return null;
+    }
+
+    const fullRent = Number(rent.toFixed(2));
 
     return {
-      advanceRent: proratedRent,
+      advanceRent: fullRent,
       securityDeposit,
-      totalDue: Number((proratedRent + securityDeposit).toFixed(2)),
+      totalDue: Number((fullRent + securityDeposit).toFixed(2)),
     };
   }, [form.rent, form.check_in_date, form.security_deposit_amount]);
 
@@ -483,8 +473,14 @@ export default function TenantsPage() {
         // For new tenant, show success modal with first invoice generation option
         const totalDue = Number(result.check_in_total_due || 0);
         const newTenantId = (result as Tenant).id;
+        const loginId = String((result as Tenant).login_id || phone);
+        const initialPassword = typeof (result as { initial_password?: string }).initial_password === "string"
+          ? String((result as { initial_password?: string }).initial_password)
+          : null;
         setSuccessTenantId(newTenantId);
         setSuccessTenantCheckInTotal(totalDue);
+        setSuccessTenantLoginId(loginId);
+        setSuccessTenantPassword(initialPassword);
         await loadTenants();
       }
     } catch {
@@ -567,11 +563,15 @@ export default function TenantsPage() {
       showToast("First invoice generated successfully!", "success");
       setSuccessTenantId(null);
       setSuccessTenantCheckInTotal(0);
+      setSuccessTenantLoginId(null);
+      setSuccessTenantPassword(null);
     } catch {
       showToast("Unable to generate first invoice right now.", "error");
     } finally {
       setIsGeneratingFirstInvoice(false);
     }
+                    setSuccessTenantLoginId(null);
+                    setSuccessTenantPassword(null);
   };
 
   const onOpenMoveModal = (tenant: Tenant) => {
@@ -699,18 +699,12 @@ export default function TenantsPage() {
             </h1>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setFormError(null);
-              setEditingTenantId(null);
-              setForm(initialForm);
-              setIsModalOpen(true);
-            }}
+          <Link
+            href="/admin/tenants/new"
             className="cursor-pointer inline-flex items-center justify-center rounded-xl bg-[var(--color-emerald)] px-4 py-2 text-sm font-bold text-[var(--color-text-inverse)] shadow-[var(--shadow-cta)] transition hover:bg-[var(--color-emerald-hover)]"
           >
             Add New Tenant
-          </button>
+          </Link>
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
@@ -769,18 +763,12 @@ export default function TenantsPage() {
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">
               Get started by adding your first tenant.
             </p>
-            <button
-              type="button"
-              onClick={() => {
-                setFormError(null);
-                setEditingTenantId(null);
-                setForm(initialForm);
-                setIsModalOpen(true);
-              }}
+            <Link
+              href="/admin/tenants/new"
               className="cursor-pointer mt-6 inline-flex items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3 text-sm font-semibold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-soft)]"
             >
               Add Your First Tenant
-            </button>
+            </Link>
           </div>
         ) : null}
 
@@ -1109,10 +1097,10 @@ export default function TenantsPage() {
               {!editingTenantId && checkInPayablePreview ? (
                 <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-                    Check-in Payment (Prorated)
+                    Check-in Payment
                   </p>
                   <div className="mt-2 space-y-1 text-sm text-[var(--color-text-secondary)]">
-                    <p>Prorated Rent (Remaining Days): ₹{formatIndianNumber(checkInPayablePreview.advanceRent)}</p>
+                    <p>Rent: ₹{formatIndianNumber(checkInPayablePreview.advanceRent)}</p>
                     <p>Security Deposit: ₹{formatIndianNumber(checkInPayablePreview.securityDeposit)}</p>
                     <p className="font-bold text-[var(--color-text-title)]">
                       Total Payable at Check-in: ₹{formatIndianNumber(checkInPayablePreview.totalDue)}
@@ -1324,22 +1312,43 @@ export default function TenantsPage() {
                 The tenant has been successfully added to your property.
               </p>
 
+              {successTenantLoginId ? (
+                <div className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-alt)] p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-emerald)]">
+                    Tenant Login Details
+                  </p>
+                  <div className="mt-2 space-y-1 text-sm text-[var(--color-text-secondary)]">
+                    <p>
+                      <span className="font-semibold text-[var(--color-text-title)]">Login ID:</span> {successTenantLoginId}
+                    </p>
+                    {successTenantPassword ? (
+                      <p>
+                        <span className="font-semibold text-[var(--color-text-title)]">Temporary Password:</span> {successTenantPassword}
+                      </p>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                    Tenant can change this password after first login.
+                  </p>
+                </div>
+              ) : null}
+
               {successTenantCheckInTotal > 0 && (
                 <div className="mb-4 rounded-lg bg-[var(--color-surface-alt)] p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-sky)]">
-                    Check-in Payable (Prorated)
+                    Check-in Payable
                   </p>
                   <p className="mt-2 text-2xl font-bold text-[var(--color-text-title)]">
                     ₹{formatIndianNumber(successTenantCheckInTotal)}
                   </p>
                   <p className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                    (Prorated rent + Security deposit)
+                    (Rent + Security deposit)
                   </p>
                 </div>
               )}
 
               <p className="mb-4 text-sm text-[var(--color-text-secondary)]">
-                Would you like to generate the first invoice now? This will create a prorated invoice for the remaining days of this month.
+                Would you like to generate the first invoice now? This will create the invoice for the current month.
               </p>
             </div>
 
@@ -1536,23 +1545,13 @@ function SelectField({
   };
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    if (highlightedIndex < 0) {
-      const selectedIndex = filteredOptions.findIndex((option) => option.value === value && !option.disabled);
-      if (selectedIndex >= 0) {
-        setHighlightedIndex(selectedIndex);
-      } else {
-        setHighlightedIndex(getNextEnabledIndex(0, 1));
-      }
+    if (!isOpen || highlightedIndex < 0) {
       return;
     }
 
     const target = optionRefs.current[highlightedIndex];
     target?.scrollIntoView({ block: "nearest" });
-  }, [isOpen, highlightedIndex, filteredOptions, value]);
+  }, [isOpen, highlightedIndex]);
 
   return (
     <div className="grid gap-2 relative">
@@ -1604,7 +1603,10 @@ function SelectField({
                   autoFocus
                   type="text"
                   value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setHighlightedIndex(0);
+                  }}
                   onKeyDown={handleKeyDown}
                   placeholder="Search..."
                   className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-sky)] focus:ring-2 focus:ring-[var(--color-sky-soft)]"
@@ -1653,4 +1655,3 @@ function SelectField({
     </div>
   );
 }
-

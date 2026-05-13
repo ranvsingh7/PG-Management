@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { SelectField } from "@/components/ui/select-field";
+import { InputField } from "@/components/ui/input-field";
+import { DateField } from "@/components/ui/date-field";
 
 type Visitor = {
   id: string;
@@ -592,17 +594,28 @@ type FieldProps = {
 };
 
 function Field({ label, value, onChange, required = false, type = "text", placeholder }: FieldProps) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-sm font-semibold text-[var(--color-text-secondary)]">{label}</span>
-      <input
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value);
+
+  if (type === "date") {
+    return (
+      <DateField
+        label={label}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        required={required}
-        type={type}
+        onChange={handleChange}
         placeholder={placeholder}
-        className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-secondary)] outline-none transition focus:border-[var(--color-sky)] focus:ring-2 focus:ring-[var(--color-sky-soft)]"
+        required={required}
       />
-    </label>
+    );
+  }
+
+  return (
+    <InputField
+      label={label}
+      value={value}
+      onChange={handleChange}
+      required={required}
+      type={type}
+      placeholder={placeholder}
+    />
   );
 }

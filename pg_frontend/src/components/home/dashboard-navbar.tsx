@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 type AdminProfile = {
   full_name?: string;
@@ -27,7 +26,6 @@ type Usage = {
 };
 
 export function DashboardNavbar() {
-  const router = useRouter();
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
 
@@ -86,8 +84,6 @@ export function DashboardNavbar() {
         method: "POST",
       });
     } finally {
-      router.replace("/admin/login");
-      router.refresh();
       window.location.replace("/admin/login");
     }
   };

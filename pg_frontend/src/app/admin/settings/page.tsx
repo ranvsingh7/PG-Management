@@ -13,6 +13,17 @@ type Setting = {
   invoice_prefix: string;
 };
 
+type AdminProfile = {
+  role?: string;
+};
+
+type SystemSettingForm = {
+  max_tenants: string;
+  max_buildings: string;
+  max_admins: string;
+  support: string;
+};
+
 const defaultSetting: Setting = {
   property_name: "",
   contact_phone: "",
@@ -23,12 +34,24 @@ const defaultSetting: Setting = {
   invoice_prefix: "INV",
 };
 
+const defaultSystemForm: SystemSettingForm = {
+  max_tenants: "50",
+  max_buildings: "2",
+  max_admins: "2",
+  support: "community",
+};
+
 export default function SettingsPage() {
   const [form, setForm] = useState<Setting>(defaultSetting);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [adminRole, setAdminRole] = useState<string | null>(null);
+  const [systemForm, setSystemForm] = useState<SystemSettingForm>(defaultSystemForm);
+  const [isSystemSaving, setIsSystemSaving] = useState(false);
+  const [systemError, setSystemError] = useState<string | null>(null);
+  const [systemSuccess, setSystemSuccess] = useState<string | null>(null);
 
   const loadSetting = async () => {
     setIsLoading(true);
@@ -57,7 +80,55 @@ export default function SettingsPage() {
     }
   };
 
-  useEffect(() => { loadSetting(); }, []);
+  const loadAdminProfile = async () => {
+    try {
+      const response = await fetch("/api/admin/auth/me", { cache: "no-store" });
+      const data = (await response.json()) as { admin?: AdminProfile; message?: string };
+      if (!response.ok) {
+        return;
+      }
+
+      setAdminRole(data.admin?.role || null);
+    } catch {
+      setAdminRole(null);
+    }
+  };
+
+  const loadSystemSetting = async () => {
+    setSystemError(null);
+    try {
+      const response = await fetch("/api/admin/system-settings", { cache: "no-store" });
+      const data = (await response.json()) as {
+        free_limits?: { max_tenants?: number; max_buildings?: number; max_admins?: number; support?: string };
+        message?: string;
+      };
+
+      if (!response.ok) {
+        setSystemError(data.message || "Failed to fetch system settings");
+        return;
+      }
+
+      setSystemForm({
+        max_tenants: String(data.free_limits?.max_tenants ?? 50),
+        max_buildings: String(data.free_limits?.max_buildings ?? 2),
+        max_admins: String(data.free_limits?.max_admins ?? 2),
+        support: String(data.free_limits?.support || "community"),
+      });
+    } catch {
+      setSystemError("Unable to load system settings right now.");
+    }
+  };
+
+  useEffect(() => {
+    loadSetting();
+    loadAdminProfile();
+  }, []);
+
+  useEffect(() => {
+    if (adminRole === "super_admin") {
+      loadSystemSetting();
+    }
+  }, [adminRole]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -82,6 +153,60 @@ export default function SettingsPage() {
       setError("Unable to save settings right now.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const onSystemSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsSystemSaving(true);
+    setSystemError(null);
+    setSystemSuccess(null);
+
+    const maxTenants = Number(systemForm.max_tenants);
+    const maxBuildings = Number(systemForm.max_buildings);
+    const maxAdmins = Number(systemForm.max_admins);
+
+    if (!Number.isFinite(maxTenants) || maxTenants < 0) {
+      setSystemError("Max tenants must be a non-negative number.");
+      setIsSystemSaving(false);
+      return;
+    }
+
+    if (!Number.isFinite(maxBuildings) || maxBuildings < 0) {
+      setSystemError("Max buildings must be a non-negative number.");
+      setIsSystemSaving(false);
+      return;
+    }
+
+    if (!Number.isFinite(maxAdmins) || maxAdmins < 0) {
+      setSystemError("Max admins must be a non-negative number.");
+      setIsSystemSaving(false);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/admin/system-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          max_tenants: maxTenants,
+          max_buildings: maxBuildings,
+          max_admins: maxAdmins,
+          support: systemForm.support.trim(),
+        }),
+      });
+
+      const data = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setSystemError(data.message || "Failed to save system settings");
+        return;
+      }
+
+      setSystemSuccess("System settings saved successfully.");
+    } catch {
+      setSystemError("Unable to save system settings right now.");
+    } finally {
+      setIsSystemSaving(false);
     }
   };
 
@@ -129,6 +254,43 @@ export default function SettingsPage() {
           <div className="sm:col-span-2 flex justify-end"><button disabled={isLoading || isSaving} type="submit" className="cursor-pointer rounded-md bg-[var(--color-emerald)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">{isSaving ? "Saving..." : "Save Settings"}</button></div>
         </form>
       </section>
+
+      {adminRole === "super_admin" ? (
+        <section className="mt-6 rounded-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-feature)] sm:p-8">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[var(--color-emerald)]">System</p>
+            <h2 className="mt-1 text-2xl font-black tracking-tight text-[var(--color-text-title)]">Global free limits</h2>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">These limits apply to every account on the free tier.</p>
+          </div>
+
+          {systemError ? <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{systemError}</p> : null}
+          {systemSuccess ? <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">{systemSuccess}</p> : null}
+
+          <form onSubmit={onSystemSubmit} className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+              Max Tenants
+              <input value={systemForm.max_tenants} onChange={(e) => setSystemForm((p) => ({ ...p, max_tenants: e.target.value }))} className="mt-1 w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+              Max Buildings
+              <input value={systemForm.max_buildings} onChange={(e) => setSystemForm((p) => ({ ...p, max_buildings: e.target.value }))} className="mt-1 w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+              Max Admins
+              <input value={systemForm.max_admins} onChange={(e) => setSystemForm((p) => ({ ...p, max_admins: e.target.value }))} className="mt-1 w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-medium text-[var(--color-text-secondary)]">
+              Support Tier Label
+              <input value={systemForm.support} onChange={(e) => setSystemForm((p) => ({ ...p, support: e.target.value }))} className="mt-1 w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm" />
+            </label>
+            <div className="sm:col-span-2 flex justify-end">
+              <button disabled={isSystemSaving} type="submit" className="cursor-pointer rounded-md bg-[var(--color-emerald)] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60">
+                {isSystemSaving ? "Saving..." : "Save Global Limits"}
+              </button>
+            </div>
+          </form>
+        </section>
+      ) : null}
     </DashboardLayout>
   );
 }

@@ -12,8 +12,8 @@ const quickActions = [
   { label: "Add New Building", href: "/admin/buildings" },
   { label: "Manage Rooms", href: "/admin/rooms" },
   { label: "Manage Tenants", href: "/admin/tenants" },
-  { label: "Create Invoice", href: "#" },
-  { label: "Register Tenant", href: "/admin/tenants" },
+  { label: "Create Invoice", href: "/admin/invoices" },
+  { label: "Register Tenant", href: "/admin/tenants/new" },
   { label: "Review Complaints", href: "#" },
 ];
 

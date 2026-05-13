@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { ToastViewport, useToast } from "@/components/ui/toast";
+import { InvoiceDetailModal } from "@/components/ui/invoice-detail-modal";
 
 type Building = {
   id: string;
@@ -36,6 +37,7 @@ type MoveHistoryEntry = {
 
 type Tenant = {
   id: string;
+  login_id?: string;
   name: string;
   email: string;
   phone: string;
@@ -54,6 +56,7 @@ type Tenant = {
   security_deposit_amount?: number;
   check_in_total_due?: number;
   check_in_payment_status?: "pending" | "paid";
+  onboarding_status?: "pending" | "completed";
   moving_history: MoveHistoryEntry[];
 };
 
@@ -73,17 +76,19 @@ type InvoiceTransaction = {
   id: string;
   tenant_id?: string;
   tenant_name?: string;
-  invoice_type?: "rent" | "security_deposit";
+  invoice_type?: "rent" | "security_deposit" | "electricity";
   invoice_number: string;
   period: string;
   rent_amount?: number;
   electricity_amount?: number;
+  verification_amount?: number;
   amount: number;
   paid_amount: number;
   outstanding_amount: number;
   due_date: string;
   security_deposit_amount?: number;
   security_deposit_paid_amount?: number;
+  verification_paid_amount?: number;
   payment_history?: InvoicePaymentHistoryEntry[];
   created_at?: string;
   effective_status?: InvoiceTransactionStatus;
@@ -176,6 +181,7 @@ const formatDisplayDate = (value: string | null | undefined) => {
   }).format(parsed);
 };
 
+
 const getVisiblePages = (currentPage: number, totalPages: number) => {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
@@ -189,7 +195,6 @@ const getVisiblePages = (currentPage: number, totalPages: number) => {
 
 export default function TenantDetailsPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const tenantId = String(params?.id || "");
 
   const [tenant, setTenant] = useState<Tenant | null>(null);
@@ -209,7 +214,9 @@ export default function TenantDetailsPage() {
   const [rentValue, setRentValue] = useState("");
   const [rentError, setRentError] = useState<string | null>(null);
   const [isUpdatingRent, setIsUpdatingRent] = useState(false);
+  const [isGeneratingFirstInvoice, setIsGeneratingFirstInvoice] = useState(false);
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceTransaction | null>(null);
   const [transactionsPage, setTransactionsPage] = useState(1);
   const [paymentInvoice, setPaymentInvoice] = useState<PendingInvoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
@@ -235,7 +242,7 @@ export default function TenantDetailsPage() {
     return buildings.find((b) => b.id === tenant.building_id)?.name || "Unknown";
   }, [tenant, buildings]);
 
-  const loadPage = async () => {
+  const loadPage = useCallback(async () => {
     if (!tenantId) {
       setPageError("Invalid tenant id.");
       setIsLoading(false);
@@ -312,11 +319,11 @@ export default function TenantDetailsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tenantId]);
 
   useEffect(() => {
     loadPage();
-  }, [tenantId]);
+  }, [loadPage]);
 
   const openEditModal = () => {
     if (!tenant) {
@@ -499,6 +506,37 @@ export default function TenantDetailsPage() {
     setIsRentModalOpen(true);
   };
 
+  const onGenerateFirstInvoice = async () => {
+    if (!tenant) {
+      return;
+    }
+
+    setIsGeneratingFirstInvoice(true);
+
+    try {
+      const response = await fetch("/api/admin/invoices/first-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenant_id: tenant.id }),
+      });
+
+      const result = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        showToast(result.message || "Failed to generate first invoice.", "error");
+        return;
+      }
+
+      showToast("First invoice generated successfully.", "success");
+      await loadPage();
+    } catch {
+      showToast("Unable to generate first invoice right now.", "error");
+    } finally {
+      setIsGeneratingFirstInvoice(false);
+    }
+  };
+
+
   const statusClasses =
     tenant?.status === "active"
       ? "border-emerald-300 bg-emerald-50 text-emerald-700"
@@ -522,8 +560,12 @@ export default function TenantDetailsPage() {
 
   const transactionPageSize = 8;
   const transactionsTotalPages = Math.max(Math.ceil(transactions.length / transactionPageSize), 1);
+  const hasFirstInvoice = useMemo(() => transactions.some((row) => row.is_first_invoice), [transactions]);
 
-  const securityDepositTotal = Number(tenant?.security_deposit_amount || 0);
+  const recordedSecurityDepositTotal = Number(
+    transactions.reduce((sum, row) => sum + Number(row.security_deposit_amount || 0), 0).toFixed(2)
+  );
+  const securityDepositTotal = Math.max(Number(tenant?.security_deposit_amount || 0), recordedSecurityDepositTotal);
   const securityDepositPaid = Math.min(
     securityDepositTotal,
     Number(
@@ -535,29 +577,53 @@ export default function TenantDetailsPage() {
   const securityDepositRemaining = Math.max(Number((securityDepositTotal - securityDepositPaid).toFixed(2)), 0);
   const isSecurityDepositPaid = securityDepositTotal > 0 && securityDepositRemaining <= 0;
 
-  const rentInvoices = transactions.filter((row) => (row.invoice_type || "rent") === "rent");
+  const verificationTotal = Number(
+    transactions.reduce((sum, row) => sum + Number(row.verification_amount || 0), 0).toFixed(2)
+  );
+  const verificationPaid = Number(
+    transactions.reduce((sum, row) => sum + Number(row.verification_paid_amount || 0), 0).toFixed(2)
+  );
+  const verificationRemaining = Math.max(Number((verificationTotal - verificationPaid).toFixed(2)), 0);
+  const isVerificationPaid = verificationTotal > 0 && verificationRemaining <= 0;
+
   const currentRentAmount = Number(tenant?.rent || 0);
   const currentRentPending = Number(
-    rentInvoices
-      .reduce((sum, row) => sum + Number(row.outstanding_amount || 0), 0)
+    transactions
+      .reduce((sum, row) => {
+        const rentAmount = Number(row.rent_amount || 0);
+        const electricityAmount = Number(row.electricity_amount || 0);
+        const paidAmount = Number(row.paid_amount || 0);
+        const depositPaidAmount = Number(row.security_deposit_paid_amount || 0);
+        const verificationPaidAmount = Number(row.verification_paid_amount || 0);
+        const paidTowardRent = Math.max(paidAmount - depositPaidAmount - verificationPaidAmount, 0);
+        const rentOutstanding = Math.max(rentAmount + electricityAmount - paidTowardRent, 0);
+        return sum + rentOutstanding;
+      }, 0)
       .toFixed(2)
   );
   const isRentFullyPaid = currentRentPending <= 0;
 
-  const checkInDueTotal = Number((currentRentPending + securityDepositRemaining).toFixed(2));
+  const invoiceDerivedDue = Number((currentRentPending + verificationRemaining + securityDepositRemaining).toFixed(2));
+  const checkInDueTotal = invoiceDerivedDue > 0 ? invoiceDerivedDue : Number(tenant?.check_in_total_due || 0);
 
   const checkInPendingBreakdown = [
-    {
-      label: "Security Deposit",
-      amount: securityDepositRemaining,
-      paidAmount: securityDepositPaid,
-      isPaid: securityDepositRemaining <= 0,
-    },
     {
       label: "Rent",
       amount: currentRentPending,
       paidAmount: Number((currentRentAmount - currentRentPending).toFixed(2)),
       isPaid: currentRentPending <= 0,
+    },
+    {
+      label: "Verification",
+      amount: verificationRemaining,
+      paidAmount: verificationPaid,
+      isPaid: isVerificationPaid,
+    },
+    {
+      label: "Security Deposit",
+      amount: securityDepositRemaining,
+      paidAmount: securityDepositPaid,
+      isPaid: securityDepositRemaining <= 0,
     },
   ];
 
@@ -751,6 +817,16 @@ export default function TenantDetailsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {!hasFirstInvoice ? (
+                <button
+                  type="button"
+                  onClick={onGenerateFirstInvoice}
+                  disabled={isGeneratingFirstInvoice}
+                  className="cursor-pointer inline-flex items-center justify-center rounded-xl border border-[var(--color-emerald)] bg-[var(--color-emerald-soft)] px-4 py-2 text-sm font-semibold text-[var(--color-emerald)] transition hover:bg-[var(--color-emerald)] hover:text-[var(--color-text-inverse)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isGeneratingFirstInvoice ? "Generating..." : "Generate First Invoice"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={openRentModal}
@@ -846,9 +922,11 @@ export default function TenantDetailsPage() {
             <div className="mt-3 grid gap-3 text-sm text-[var(--color-text-secondary)] sm:grid-cols-2">
               <InfoRow label="Name" value={tenant.name} />
               <InfoRow label="Phone" value={tenant.phone} />
+              <InfoRow label="Login ID" value={tenant.login_id || "-"} />
               <InfoRow label="Email" value={tenant.email} />
               <InfoRow label="Tenant ID" value={tenant.id} />
               <InfoRow label="Approval" value={tenant.approval_status || "-"} />
+              <InfoRow label="Onboarding" value={tenant.onboarding_status || "pending"} />
               <InfoRow label="PG ID" value={tenant.pg_id || "-"} />
             </div>
           </div>
@@ -892,7 +970,15 @@ export default function TenantDetailsPage() {
                 <tbody>
                   {pendingInvoices.map((invoice) => (
                     <tr key={invoice.id} className="border-t border-[var(--color-border)]">
-                      <td className="px-4 py-3 font-semibold text-[var(--color-text-title)]">{invoice.invoice_number || "-"}</td>
+                      <td className="px-4 py-3 font-semibold text-[var(--color-text-title)]">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInvoice(invoice)}
+                          className="cursor-pointer underline decoration-dotted underline-offset-4 transition hover:text-[var(--color-sky)]"
+                        >
+                          {invoice.invoice_number || "-"}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 text-[var(--color-text-secondary)]">{formatDisplayDate(invoice.due_date)}</td>
                       <td className="px-4 py-3 text-right font-semibold text-[var(--color-text-title)]">{formatCurrencyInr(Number(invoice.amount || 0))}</td>
                       <td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatCurrencyInr(Number(invoice.paid_amount || 0))}</td>
@@ -1102,7 +1188,13 @@ export default function TenantDetailsPage() {
                               {formatDisplayDate(row.created_at || row.due_date)}
                             </td>
                             <td className="px-4 py-3">
-                              <p className="font-semibold text-[var(--color-text-title)]">{row.invoice_number || "-"}</p>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedInvoice(row)}
+                                className="cursor-pointer text-left font-semibold text-[var(--color-text-title)] underline decoration-dotted underline-offset-4 transition hover:text-[var(--color-sky)]"
+                              >
+                                {row.invoice_number || "-"}
+                              </button>
                               {row.is_first_invoice ? (
                                 <span className="mt-1 inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-sky-700">
                                   First Invoice
@@ -1454,6 +1546,13 @@ export default function TenantDetailsPage() {
           </div>
         </div>
       ) : null}
+
+      <InvoiceDetailModal
+        isOpen={Boolean(selectedInvoice)}
+        invoice={selectedInvoice}
+        onClose={() => setSelectedInvoice(null)}
+        settingsEndpoint="/api/admin/settings"
+      />
 
       <ToastViewport toast={toast} />
     </DashboardLayout>

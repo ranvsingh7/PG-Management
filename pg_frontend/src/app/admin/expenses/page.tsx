@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { SelectField } from "@/components/ui/select-field";
 
@@ -110,7 +110,7 @@ export default function ExpensesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | ExpenseStatus>("all");
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const loadExpenses = async () => {
+  const loadExpenses = useCallback(async () => {
     setIsLoading(true);
     setListError(null);
 
@@ -133,11 +133,11 @@ export default function ExpensesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadExpenses();
-  }, [selectedMonth]);
+  }, [loadExpenses]);
 
   const filteredExpenses = useMemo(() => {
     const query = searchText.trim().toLowerCase();

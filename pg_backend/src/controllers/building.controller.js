@@ -3,6 +3,7 @@ import {
   createBuilding,
   deleteBuilding,
   getAllBuildings,
+  getBuildingByCode,
   getBuildingById,
   updateBuilding
 } from '../data/building.store.js';
@@ -12,6 +13,27 @@ import {
 } from '../validators/building.validator.js';
 
 const nowIso = () => new Date().toISOString();
+
+const slugify = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-+|-+$)/g, '')
+    .slice(0, 32);
+
+const buildUniquePropertyCode = async (name) => {
+  const base = slugify(name) || `pg-${uuidv4().slice(0, 6)}`;
+  let candidate = base;
+  let counter = 1;
+
+  while (await getBuildingByCode(candidate)) {
+    counter += 1;
+    candidate = `${base}-${counter}`.slice(0, 32);
+  }
+
+  return candidate;
+};
 
 const pickAllowedInputFields = (payload) => {
   const picked = {};
@@ -29,6 +51,7 @@ const normalizeBuildingForCreate = (payload, createdBy) => {
   const base = {
     id: uuidv4(),
     name: payload.name,
+    property_code: payload.property_code,
     address: payload.address,
     city: payload.city,
     area: payload.area,
@@ -71,7 +94,8 @@ export const createBuildingHandler = async (req, res) => {
     }
 
     const input = pickAllowedInputFields(req.body);
-    const building = normalizeBuildingForCreate(input, ownerAccountId);
+    const propertyCode = await buildUniquePropertyCode(input.name);
+    const building = normalizeBuildingForCreate({ ...input, property_code: propertyCode }, ownerAccountId);
     const created = await createBuilding(building);
     return res.status(201).json(created);
   } catch (error) {

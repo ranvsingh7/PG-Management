@@ -881,19 +881,13 @@ function SelectField({ label, value, onChange, options, placeholder, required = 
   };
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    if (highlightedIndex < 0) {
-      const selectedIndex = filteredOptions.findIndex((opt) => opt.value === value);
-      setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    if (!isOpen || highlightedIndex < 0) {
       return;
     }
 
     const target = optionRefs.current[highlightedIndex];
     target?.scrollIntoView({ block: "nearest" });
-  }, [isOpen, highlightedIndex, filteredOptions, value]);
+  }, [isOpen, highlightedIndex]);
 
   return (
     <div className="grid gap-2 relative">
@@ -944,7 +938,10 @@ function SelectField({ label, value, onChange, options, placeholder, required = 
                   type="text"
                   placeholder="Search..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    setHighlightedIndex(0);
+                  }}
                   onKeyDown={handleKeyDown}
                   className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none transition focus:border-[var(--color-sky)] focus:ring-2 focus:ring-[var(--color-sky-soft)]"
                   autoFocus

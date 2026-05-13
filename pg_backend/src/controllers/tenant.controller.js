@@ -1,17 +1,22 @@
 import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
 import {
   getBuildingById,
 } from '../data/building.store.js';
 import {
   countActiveTenantsByRoom,
+  countTenantsByOwner,
   createTenant,
   deleteTenant,
   getAllTenants,
   getTenantById,
+  getTenantByLoginId,
   updateTenant
 } from '../data/tenant.store.js';
+import { createElectricityReading } from '../data/electricity-reading.store.js';
 import { getAdminById, getAdminByEmail } from '../data/admin.store.js';
 import { getRoomByBuildingAndRoomNumber } from '../data/room.store.js';
+import { getOrCreateSystemSetting, getDefaultFreeLimits } from '../data/system-setting.store.js';
 import {
   allowedInputFields,
   validateTenantPayload
@@ -33,6 +38,7 @@ const pickAllowedInputFields = (payload) => {
 
 const normalizeTenantForCreate = (payload, createdBy) => ({
   id: uuidv4(),
+  login_id: payload.login_id,
   name: payload.name,
   email: payload.email,
   phone: payload.phone,
@@ -46,6 +52,10 @@ const normalizeTenantForCreate = (payload, createdBy) => ({
   approval_status: payload.approval_status || 'approved',
   pg_id: payload.pg_id || null,
   password_hash: payload.password_hash || null,
+  login_last_changed_at: payload.login_last_changed_at || null,
+  last_login_at: payload.last_login_at || null,
+  onboarding_status: payload.onboarding_status || 'pending',
+  onboarding_completed_at: payload.onboarding_completed_at || null,
   security_deposit_amount: Number.isFinite(payload.security_deposit_amount) ? payload.security_deposit_amount : 0,
   owner_account_id: createdBy,
   created_by: createdBy,
@@ -62,6 +72,8 @@ const normalizeTenantForUpdate = (existing, payload, updatedBy) => ({
   updated_at: nowIso()
 });
 
+const VERIFICATION_CHARGE = 500;
+
 export const createTenantHandler = async (req, res) => {
   try {
     const ownerAccountId = req.admin?.accountOwnerId || req.admin?.id || 'admin';
@@ -73,6 +85,17 @@ export const createTenantHandler = async (req, res) => {
 
     const input = pickAllowedInputFields(req.body);
 
+    const [systemSetting, tenantCount] = await Promise.all([
+      getOrCreateSystemSetting(),
+      countTenantsByOwner(ownerAccountId)
+    ]);
+
+    const freeLimits = systemSetting?.free_limits || getDefaultFreeLimits();
+
+    if (Number.isFinite(freeLimits.max_tenants) && tenantCount >= freeLimits.max_tenants) {
+      return res.status(403).json({ message: 'Tenant limit reached. Please upgrade your plan to add more tenants.' });
+    }
+
     const room = await getRoomByBuildingAndRoomNumber(input.building_id, input.room_number, ownerAccountId);
     if (!room) {
       return res.status(400).json({ message: 'Selected room not found in this building' });
@@ -83,39 +106,45 @@ export const createTenantHandler = async (req, res) => {
       return res.status(400).json({ message: 'Selected building not found' });
     }
 
-    if (input.status === 'active') {
-      const activeTenantCount = await countActiveTenantsByRoom(
-        ownerAccountId,
-        input.building_id,
-        input.room_number
-      );
+    const activeTenantCount = await countActiveTenantsByRoom(
+      ownerAccountId,
+      input.building_id,
+      input.room_number
+    );
 
-      if (activeTenantCount >= Number(room.capacity || 0)) {
-        return res.status(400).json({ message: 'Selected room is full. Please choose another room.' });
-      }
+    if (input.status === 'active' && activeTenantCount >= Number(room.capacity || 0)) {
+      return res.status(400).json({ message: 'Selected room is full. Please choose another room.' });
     }
 
-    // Calculate prorated rent based on check-in date
+    const loginId = String(input.phone || '').trim();
+    if (!loginId) {
+      return res.status(400).json({ message: 'Tenant phone is required for login id' });
+    }
+
+    const existingLogin = await getTenantByLoginId(loginId);
+    if (existingLogin) {
+      return res.status(409).json({ message: 'A tenant with this phone number already exists' });
+    }
+
+    const initialPassword = String(Math.floor(100000 + Math.random() * 900000));
+    const passwordHash = await bcrypt.hash(initialPassword, 10);
+
+    // Use full monthly rent on check-in (no proration).
     const fullMonthlyRent = Number(input.rent || 0);
-    const checkInDate = new Date(input.check_in_date);
-    const year = checkInDate.getUTCFullYear();
-    const month = checkInDate.getUTCMonth();
-    
-    // Get last day of the month
-    const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0));
-    const daysInMonth = lastDayOfMonth.getUTCDate();
-    
-    // Calculate days remaining (including check-in day)
-    const checkInDay = checkInDate.getUTCDate();
-    const daysRemaining = daysInMonth - checkInDay + 1;
-    
-    // Calculate prorated rent
-    const advanceRentAmount = Number(((fullMonthlyRent / daysInMonth) * daysRemaining).toFixed(2));
-    const securityDepositAmount = Number.isFinite(input.security_deposit_amount) ? Number(input.security_deposit_amount) : 0;
-    const checkInTotalDue = Number((advanceRentAmount + securityDepositAmount).toFixed(2));
+    const advanceRentAmount = Number(fullMonthlyRent.toFixed(2));
+    const securityDepositAmount = Number.isFinite(input.security_deposit_amount)
+      ? Number(input.security_deposit_amount)
+      : 0;
+    const verificationAmount = VERIFICATION_CHARGE;
+    const checkInTotalDue = Number((advanceRentAmount + verificationAmount + securityDepositAmount).toFixed(2));
 
     const tenant = {
       ...normalizeTenantForCreate(input, ownerAccountId),
+      login_id: loginId,
+      password_hash: passwordHash,
+      login_last_changed_at: new Date(),
+      onboarding_status: 'pending',
+      onboarding_completed_at: null,
       advance_rent_amount: advanceRentAmount,
       security_deposit_amount: securityDepositAmount,
       check_in_total_due: checkInTotalDue,
@@ -123,7 +152,32 @@ export const createTenantHandler = async (req, res) => {
     };
     const created = await createTenant(tenant);
 
-    return res.status(201).json(created);
+    const readingValue = Number(input.current_reading);
+    if (input.status === 'active' && Number.isFinite(readingValue) && readingValue >= 0) {
+      const readingDate = new Date(input.check_in_date);
+      if (Number.isNaN(readingDate.getTime())) {
+        return res.status(400).json({ message: 'check_in_date must be a valid date string' });
+      }
+      const readingType = activeTenantCount === 0 ? 'base' : 'checkin';
+      await createElectricityReading({
+        id: uuidv4(),
+        building_id: input.building_id,
+        room_number: input.room_number,
+        reading: Number(readingValue.toFixed(2)),
+        reading_at: readingDate,
+        reading_type: readingType,
+        owner_account_id: ownerAccountId,
+        created_by: req.admin?.id || ownerAccountId,
+        created_at: new Date(),
+        note: readingType === 'base' ? 'Base reading set on first check-in' : 'Check-in reading'
+      });
+    }
+
+    return res.status(201).json({
+      ...created,
+      login_id: loginId,
+      initial_password: initialPassword
+    });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to create tenant', error: error.message });
   }

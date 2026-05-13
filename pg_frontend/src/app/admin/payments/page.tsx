@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { SelectField } from "@/components/ui/select-field";
+import { InvoiceDetailModal } from "@/components/ui/invoice-detail-modal";
 
 type InvoiceStatus = "pending" | "paid" | "partial" | "overdue";
 
@@ -29,6 +30,10 @@ type PaymentInvoice = {
   effective_status?: InvoiceStatus;
   due_date: string;
   payment_history?: InvoicePaymentHistoryEntry[];
+  rent_amount?: number;
+  electricity_amount?: number;
+  security_deposit_amount?: number;
+  created_at?: string;
 };
 
 type TenantPaymentHistoryRow = {
@@ -101,13 +106,14 @@ export default function PaymentsPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const [recordInvoice, setRecordInvoice] = useState<PaymentInvoice | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<PaymentInvoice | null>(null);
   const [recordAmount, setRecordAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "online">("cash");
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
 
-  const loadInvoices = async () => {
+  const loadInvoices = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -143,11 +149,11 @@ export default function PaymentsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [month, searchText, statusFilter]);
 
   useEffect(() => {
     loadInvoices();
-  }, [month, searchText, statusFilter]);
+  }, [loadInvoices]);
 
   const metrics = useMemo(() => {
     const totalCollectedThisMonth = invoices.reduce((sum, invoice) => sum + Number(invoice.paid_amount || 0), 0);
@@ -393,7 +399,15 @@ export default function PaymentsPage() {
 
                     return (
                       <tr key={invoice.id} className="hover:bg-[var(--color-surface-soft)]">
-                        <td className="px-4 py-3 font-semibold text-[var(--color-text-title)]">{invoice.invoice_number}</td>
+                        <td className="px-4 py-3 font-semibold text-[var(--color-text-title)]">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedInvoice(invoice)}
+                            className="cursor-pointer underline decoration-dotted underline-offset-4 transition hover:text-[var(--color-sky)]"
+                          >
+                            {invoice.invoice_number}
+                          </button>
+                        </td>
                         <td className="px-4 py-3 text-[var(--color-text-secondary)]">
                           <p className="font-medium text-[var(--color-text-title)]">{invoice.tenant_name}</p>
                           <p className="text-xs text-[var(--color-text-muted)]">Due: {toPrettyDate(invoice.due_date)}</p>
@@ -458,7 +472,20 @@ export default function PaymentsPage() {
                     <tr key={row.id} className="hover:bg-[var(--color-surface-soft)]">
                       <td className="px-4 py-3 text-[var(--color-text-secondary)]">{toPrettyDate(row.paid_at)}</td>
                       <td className="px-4 py-3 font-medium text-[var(--color-text-title)]">{row.tenant_name}</td>
-                      <td className="px-4 py-3 text-[var(--color-text-secondary)]">{row.invoice_number}</td>
+                      <td className="px-4 py-3 text-[var(--color-text-secondary)]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const match = invoices.find((item) => item.invoice_number === row.invoice_number);
+                            if (match) {
+                              setSelectedInvoice(match);
+                            }
+                          }}
+                          className="cursor-pointer underline decoration-dotted underline-offset-4 transition hover:text-[var(--color-sky)]"
+                        >
+                          {row.invoice_number}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 text-right font-semibold text-emerald-700">{formatCurrency(row.amount)}</td>
                       <td className="px-4 py-3 text-right text-[var(--color-text-secondary)]">{formatCurrency(row.paid_total)}</td>
                       <td className="px-4 py-3 text-[var(--color-text-secondary)]">
@@ -584,6 +611,13 @@ export default function PaymentsPage() {
             </div>
           </div>
         ) : null}
+
+        <InvoiceDetailModal
+          isOpen={Boolean(selectedInvoice)}
+          invoice={selectedInvoice}
+          onClose={() => setSelectedInvoice(null)}
+          settingsEndpoint="/api/admin/settings"
+        />
       </div>
     </DashboardLayout>
   );

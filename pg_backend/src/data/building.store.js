@@ -16,6 +16,9 @@ export const countBuildingsByOwner = async (ownerAccountId) =>
 export const getBuildingById = async (id, ownerAccountId) =>
   Building.findOne({ id, ...ownerScopeQuery(ownerAccountId) }).lean();
 
+export const getBuildingByCode = async (propertyCode) =>
+  Building.findOne({ property_code: propertyCode }).lean();
+
 export const createBuilding = async (building) => {
   const created = await Building.create(building);
   return created.toJSON();

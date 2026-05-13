@@ -13,13 +13,15 @@ const invoiceSchema = new mongoose.Schema(
     invoice_type: {
       type: String,
       required: true,
-      enum: ['rent', 'security_deposit'],
+      enum: ['rent', 'security_deposit', 'electricity'],
       default: 'rent',
       index: true
     },
     period: { type: String, required: true, index: true },
     rent_amount: { type: Number, required: true, min: 0, default: 0 },
     electricity_amount: { type: Number, required: true, min: 0, default: 0 },
+    verification_amount: { type: Number, default: 0, min: 0 },
+    verification_paid_amount: { type: Number, default: 0, min: 0 },
     security_deposit_amount: { type: Number, default: 0, min: 0 },
     security_deposit_paid_amount: { type: Number, default: 0, min: 0 },
     amount: { type: Number, required: true, min: 0 },

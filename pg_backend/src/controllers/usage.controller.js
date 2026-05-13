@@ -1,13 +1,7 @@
 import { countAdminsByAccountOwnerId } from '../data/admin.store.js';
 import { countBuildingsByOwner } from '../data/building.store.js';
 import { countTenantsByOwner } from '../data/tenant.store.js';
-
-const FREE_LIMITS = {
-  max_tenants: 50,
-  max_buildings: 2,
-  max_admins: 2,
-  support: 'community'
-};
+import { getOrCreateSystemSetting, getDefaultFreeLimits } from '../data/system-setting.store.js';
 
 export const getUsageHandler = async (req, res) => {
   try {
@@ -17,11 +11,14 @@ export const getUsageHandler = async (req, res) => {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const [tenantCount, buildingCount, adminCount] = await Promise.all([
+    const [tenantCount, buildingCount, adminCount, systemSetting] = await Promise.all([
       countTenantsByOwner(ownerAccountId),
       countBuildingsByOwner(ownerAccountId),
-      countAdminsByAccountOwnerId(ownerAccountId)
+      countAdminsByAccountOwnerId(ownerAccountId),
+      getOrCreateSystemSetting()
     ]);
+
+    const FREE_LIMITS = systemSetting?.free_limits || getDefaultFreeLimits();
 
     const approachingLimit =
       tenantCount >= Math.ceil(FREE_LIMITS.max_tenants * 0.8) ||

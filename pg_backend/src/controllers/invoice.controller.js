@@ -10,12 +10,21 @@ import {
 } from '../data/invoice.store.js';
 import { getOrCreateInvoiceSetting, updateInvoiceSetting } from '../data/invoice-setting.store.js';
 import { getTenantById, updateTenant } from '../data/tenant.store.js';
+import { getRoomsByBuildingId } from '../data/room.store.js';
+import {
+  getLatestReadingBeforeDate,
+  getMonthEndReadingForRange,
+  getReadingsForBuildingAndRange
+} from '../data/electricity-reading.store.js';
 import {
   createSecurityDeposit,
   getSecurityDeposits,
   updateSecurityDepositById
 } from '../data/security-deposit.store.js';
 import { getAdminById } from '../data/admin.store.js';
+import { parseMonth, buildTenantIntervals, buildRoomSummary } from '../services/electricity-billing.js';
+
+const VERIFICATION_CHARGE = 500;
 
 const toMonthKey = (date = new Date()) => {
   const year = date.getUTCFullYear();
@@ -99,17 +108,26 @@ const buildInvoiceNumber = (period, index) => {
 };
 
 const normalizeInvoiceBreakup = (invoice) => {
-  const amount = Number(invoice.amount || 0);
-  const rentAmount = Number.isFinite(Number(invoice.rent_amount)) ? Number(invoice.rent_amount) : amount;
+  const rentAmount = Number.isFinite(Number(invoice.rent_amount)) ? Number(invoice.rent_amount) : 0;
   const electricityAmount = Number.isFinite(Number(invoice.electricity_amount))
     ? Number(invoice.electricity_amount)
-    : Number((amount - rentAmount).toFixed(2));
+    : 0;
+  const verificationAmount = Number.isFinite(Number(invoice.verification_amount))
+    ? Number(invoice.verification_amount)
+    : 0;
+  const verificationPaidAmount = Number.isFinite(Number(invoice.verification_paid_amount))
+    ? Number(invoice.verification_paid_amount)
+    : 0;
   const securityDepositAmount = Number.isFinite(Number(invoice.security_deposit_amount))
     ? Number(invoice.security_deposit_amount)
     : 0;
   const securityDepositPaidAmount = Number.isFinite(Number(invoice.security_deposit_paid_amount))
     ? Number(invoice.security_deposit_paid_amount)
     : 0;
+  const computedTotal = Number((rentAmount + electricityAmount + verificationAmount + securityDepositAmount).toFixed(2));
+  const amount = Number.isFinite(Number(invoice.amount)) && Number(invoice.amount) > 0
+    ? Number(invoice.amount)
+    : computedTotal;
   const paymentHistory = Array.isArray(invoice.payment_history)
     ? invoice.payment_history
         .map((entry) => ({
@@ -130,6 +148,8 @@ const normalizeInvoiceBreakup = (invoice) => {
     invoice_type: invoice.invoice_type || 'rent',
     rent_amount: Number(rentAmount.toFixed(2)),
     electricity_amount: Number(Math.max(electricityAmount, 0).toFixed(2)),
+    verification_amount: Number(Math.max(verificationAmount, 0).toFixed(2)),
+    verification_paid_amount: Number(Math.max(verificationPaidAmount, 0).toFixed(2)),
     security_deposit_amount: Number(securityDepositAmount.toFixed(2)),
     security_deposit_paid_amount: Number(securityDepositPaidAmount.toFixed(2)),
     payment_history: paymentHistory,
@@ -235,6 +255,7 @@ export const generateInvoicesHandler = async (req, res) => {
   try {
     const ownerAccountId = req.admin?.accountOwnerId || req.admin?.id || 'admin';
     const parsedPeriod = parsePeriod(req.body?.period);
+    const parsedMonth = parsedPeriod ? parseMonth(parsedPeriod.value) : null;
 
     if (!parsedPeriod) {
       return res.status(400).json({ message: 'period must be in YYYY-MM format' });
@@ -252,8 +273,8 @@ export const generateInvoicesHandler = async (req, res) => {
     const existingTenantIds = new Set(existingInvoices.map((invoice) => invoice.tenant_id));
     const buildingMap = new Map(buildings.map((building) => [building.id, building]));
 
-    const dueDay = Number(setting.due_day_of_month || 2);
-    const dueDate = new Date(Date.UTC(parsedPeriod.year, parsedPeriod.month - 1, dueDay, 0, 0, 0, 0));
+    const dueDayDefault = Number(setting.due_day_of_month || 2);
+    const daysInPeriodMonth = new Date(Date.UTC(parsedPeriod.year, parsedPeriod.month, 0)).getUTCDate();
     const periodFromTs = Date.UTC(parsedPeriod.year, parsedPeriod.month - 1, 1, 0, 0, 0, 0);
     const periodToTs = Date.UTC(parsedPeriod.year, parsedPeriod.month, 0, 23, 59, 59, 999);
 
@@ -281,11 +302,76 @@ export const generateInvoicesHandler = async (req, res) => {
       });
     }
 
+    const electricityByTenant = new Map();
+
+    if (parsedMonth) {
+      const buildingIds = buildingId ? [buildingId] : buildings.map((item) => item.id);
+
+      for (const id of buildingIds) {
+        const building = buildingMap.get(id);
+        if (!building) {
+          continue;
+        }
+
+        const rooms = await getRoomsByBuildingId(id, ownerAccountId);
+        if (!rooms.length) {
+          continue;
+        }
+
+        const readingsInMonth = await getReadingsForBuildingAndRange(
+          id,
+          ownerAccountId,
+          parsedMonth.start,
+          parsedMonth.end
+        );
+
+        for (const room of rooms) {
+          const roomReadings = readingsInMonth.filter((reading) => reading.room_number === room.room_number);
+          const [baselineReading, monthEndReading] = await Promise.all([
+            getLatestReadingBeforeDate(id, room.room_number, ownerAccountId, parsedMonth.start),
+            getMonthEndReadingForRange(id, room.room_number, ownerAccountId, parsedMonth.start, parsedMonth.end)
+          ]);
+
+          const tenantIntervals = buildTenantIntervals(tenants, id, room.room_number);
+          const summary = buildRoomSummary({
+            room,
+            buildingId: id,
+            monthStart: parsedMonth.start,
+            monthEnd: parsedMonth.end,
+            rate: Number(building.electricity_rate || 0),
+            roomReadings,
+            baselineReading,
+            monthEndReading,
+            tenantIntervals
+          });
+
+          if (summary.status !== 'ok') {
+            continue;
+          }
+
+          summary.allocations.forEach((allocation) => {
+            if (!allocation || !allocation.tenant_id) {
+              return;
+            }
+            const current = Number(electricityByTenant.get(allocation.tenant_id) || 0);
+            electricityByTenant.set(
+              allocation.tenant_id,
+              Number((current + Number(allocation.amount || 0)).toFixed(2))
+            );
+          });
+        }
+      }
+    }
+
     const records = eligibleTenants.map((tenant, index) => {
       const rentAmount = Number(tenant.rent || 0);
-      const electricityAmount = 0;
+      const electricityAmount = Number(electricityByTenant.get(tenant.id) || 0);
       const amount = Number((rentAmount + electricityAmount).toFixed(2));
       const building = buildingMap.get(tenant.building_id);
+      const checkInDate = new Date(tenant.check_in_date);
+      const checkInDay = Number.isNaN(checkInDate.getTime()) ? dueDayDefault : checkInDate.getUTCDate();
+      const dueDay = Math.min(Math.max(checkInDay, 1), daysInPeriodMonth);
+      const dueDate = new Date(Date.UTC(parsedPeriod.year, parsedPeriod.month - 1, dueDay, 0, 0, 0, 0));
 
       return {
         id: uuidv4(),
@@ -410,6 +496,7 @@ export const updateInvoiceStatusHandler = async (req, res) => {
     const amount = Number(normalized.amount || 0);
     const rentAmount = Number(normalized.rent_amount || 0);
     const electricityAmount = Number(normalized.electricity_amount || 0);
+    const verificationAmount = Number(normalized.verification_amount || 0);
     const securityDepositAmount = Number(normalized.security_deposit_amount || 0);
     const currentPaidAmount = Number(normalized.paid_amount || 0);
     const currentHistory = Array.isArray(normalized.payment_history) ? normalized.payment_history : [];
@@ -449,6 +536,7 @@ export const updateInvoiceStatusHandler = async (req, res) => {
         status: 'paid',
         paid_amount: nextPaidAmount,
         outstanding_amount: 0,
+        verification_paid_amount: verificationAmount,
         security_deposit_paid_amount: securityDepositAmount,
         payment_history: appendPaymentHistory(nextPaidAmount)
       });
@@ -468,16 +556,16 @@ export const updateInvoiceStatusHandler = async (req, res) => {
       }
 
       const nextPaidAmount = rawPaidAmount;
+      const nonDepositAmount = Number((rentAmount + electricityAmount + verificationAmount).toFixed(2));
+      const paidTowardsVerification = Math.max(nextPaidAmount - Number((rentAmount + electricityAmount).toFixed(2)), 0);
+      const verificationPaid = Math.min(paidTowardsVerification, verificationAmount);
+      const paidTowardsDeposit = Math.max(nextPaidAmount - nonDepositAmount, 0);
       const updated = await updateInvoiceById(invoiceId, ownerAccountId, {
         status: 'partial',
         paid_amount: nextPaidAmount,
         outstanding_amount: Number((amount - nextPaidAmount).toFixed(2)),
-        security_deposit_paid_amount: Number(
-          Math.min(
-            Math.max(nextPaidAmount - Number((rentAmount + electricityAmount).toFixed(2)), 0),
-            securityDepositAmount
-          ).toFixed(2)
-        ),
+        verification_paid_amount: Number(verificationPaid.toFixed(2)),
+        security_deposit_paid_amount: Number(Math.min(paidTowardsDeposit, securityDepositAmount).toFixed(2)),
         payment_history: appendPaymentHistory(nextPaidAmount)
       });
 
@@ -494,6 +582,7 @@ export const updateInvoiceStatusHandler = async (req, res) => {
       status: 'pending',
       paid_amount: 0,
       outstanding_amount: amount,
+      verification_paid_amount: 0,
       security_deposit_paid_amount: 0
     });
 
@@ -563,8 +652,18 @@ export const updateInvoiceHandler = async (req, res) => {
       return res.status(400).json({ message: 'electricity_amount must be a valid non-negative number' });
     }
 
+    const nextVerification = Number(currentInvoice.verification_amount || 0);
+    let nextVerificationPaid = Number(currentInvoice.verification_paid_amount || 0);
     const nextSecurityDeposit = Number(currentInvoice.security_deposit_amount || 0);
     let nextSecurityDepositPaid = Number(currentInvoice.security_deposit_paid_amount || 0);
+
+    if (req.body?.verification_paid_amount !== undefined) {
+      const verificationPaid = Number(req.body.verification_paid_amount);
+      if (!Number.isFinite(verificationPaid) || verificationPaid < 0 || verificationPaid > nextVerification) {
+        return res.status(400).json({ message: 'verification_paid_amount must be between 0 and verification_amount' });
+      }
+      nextVerificationPaid = verificationPaid;
+    }
 
     if (req.body?.security_deposit_paid_amount !== undefined) {
       const depositPaid = Number(req.body.security_deposit_paid_amount);
@@ -574,7 +673,7 @@ export const updateInvoiceHandler = async (req, res) => {
       nextSecurityDepositPaid = depositPaid;
     }
 
-    const nextAmount = Number((nextRent + nextElectricity + nextSecurityDeposit).toFixed(2));
+    const nextAmount = Number((nextRent + nextElectricity + nextVerification + nextSecurityDeposit).toFixed(2));
     let nextPaid = Number(currentInvoice.paid_amount || 0);
 
     if (req.body?.paid_amount !== undefined) {
@@ -583,10 +682,11 @@ export const updateInvoiceHandler = async (req, res) => {
         return res.status(400).json({ message: 'paid_amount must be between 0 and total amount' });
       }
       nextPaid = paid;
-    } else if (req.body?.security_deposit_paid_amount !== undefined) {
-      // If only security deposit paid amount changed, adjust total paid accordingly
+    } else if (req.body?.security_deposit_paid_amount !== undefined || req.body?.verification_paid_amount !== undefined) {
+      // If only paid breakup changed, adjust total paid accordingly.
       const oldSecurityDepositPaid = Number(currentInvoice.security_deposit_paid_amount || 0);
-      const difference = nextSecurityDepositPaid - oldSecurityDepositPaid;
+      const oldVerificationPaid = Number(currentInvoice.verification_paid_amount || 0);
+      const difference = (nextSecurityDepositPaid - oldSecurityDepositPaid) + (nextVerificationPaid - oldVerificationPaid);
       nextPaid = Number(Math.max(0, nextPaid + difference).toFixed(2));
     }
 
@@ -620,17 +720,31 @@ export const updateInvoiceHandler = async (req, res) => {
     }
 
     const hasExplicitSecurityDepositPaid = req.body?.security_deposit_paid_amount !== undefined;
+    const hasExplicitVerificationPaid = req.body?.verification_paid_amount !== undefined;
 
-    if (!hasExplicitSecurityDepositPaid) {
+    if (!hasExplicitSecurityDepositPaid || !hasExplicitVerificationPaid) {
       if (nextStatus === 'pending') {
+        if (!hasExplicitVerificationPaid) {
+          nextVerificationPaid = 0;
+        }
         nextSecurityDepositPaid = 0;
       } else if (nextStatus === 'paid') {
+        if (!hasExplicitVerificationPaid) {
+          nextVerificationPaid = nextVerification;
+        }
         nextSecurityDepositPaid = nextSecurityDeposit;
       } else {
-        // For partial payments, treat rent + electricity as settled first, then apply remaining to deposit.
-        const nonDepositAmount = Number((nextRent + nextElectricity).toFixed(2));
-        const paidTowardsDeposit = Math.max(nextPaid - nonDepositAmount, 0);
-        nextSecurityDepositPaid = Math.min(paidTowardsDeposit, nextSecurityDeposit);
+        // For partial payments, treat rent + electricity first, then verification, then deposit.
+        const nonVerificationAmount = Number((nextRent + nextElectricity).toFixed(2));
+        if (!hasExplicitVerificationPaid) {
+          const paidTowardsVerification = Math.max(nextPaid - nonVerificationAmount, 0);
+          nextVerificationPaid = Math.min(paidTowardsVerification, nextVerification);
+        }
+        if (!hasExplicitSecurityDepositPaid) {
+          const nonDepositAmount = Number((nextRent + nextElectricity + nextVerification).toFixed(2));
+          const paidTowardsDeposit = Math.max(nextPaid - nonDepositAmount, 0);
+          nextSecurityDepositPaid = Math.min(paidTowardsDeposit, nextSecurityDeposit);
+        }
       }
     }
 
@@ -639,6 +753,7 @@ export const updateInvoiceHandler = async (req, res) => {
     const updates = {
       rent_amount: Number(nextRent.toFixed(2)),
       electricity_amount: Number(nextElectricity.toFixed(2)),
+      verification_paid_amount: Number(nextVerificationPaid.toFixed(2)),
       security_deposit_paid_amount: Number(nextSecurityDepositPaid.toFixed(2)),
       amount: nextAmount,
       paid_amount: Number(nextPaid.toFixed(2)),
@@ -714,22 +829,12 @@ export const generateFirstInvoiceHandler = async (req, res) => {
       return res.status(404).json({ message: 'Building not found' });
     }
 
-    // Calculate prorated rent based on check-in date
+    // Use full monthly rent for the first invoice (no proration).
     const checkInDate = new Date(tenant.check_in_date);
     const currentYear = checkInDate.getUTCFullYear();
     const currentMonth = checkInDate.getUTCMonth();
-    
-    // Get last day of the month
-    const lastDayOfMonth = new Date(Date.UTC(currentYear, currentMonth + 1, 0));
-    const daysInMonth = lastDayOfMonth.getUTCDate();
-    
-    // Calculate days remaining in the month (including check-in day)
-    const checkInDay = checkInDate.getUTCDate();
-    const daysRemaining = daysInMonth - checkInDay + 1;
-    
-    // Calculate prorated rent
     const fullMonthlyRent = Number(tenant.rent || 0);
-    const proratedRent = Number(((fullMonthlyRent / daysInMonth) * daysRemaining).toFixed(2));
+    const verificationAmount = VERIFICATION_CHARGE;
     const securityDeposit = Number.isFinite(tenant.security_deposit_amount) ? Number(tenant.security_deposit_amount) : 0;
     
     // Create period string for current month
@@ -737,8 +842,10 @@ export const generateFirstInvoiceHandler = async (req, res) => {
     const period = `${currentYear}-${periodMonth}`;
     
     // Set due date
-    const dueDay = Number(setting.due_day_of_month || 2);
-    const dueDate = new Date(Date.UTC(currentYear, currentMonth, dueDay, 0, 0, 0, 0));
+    const checkInDay = Number.isNaN(checkInDate.getTime())
+      ? Number(setting.due_day_of_month || 2)
+      : checkInDate.getUTCDate();
+    const dueDate = new Date(Date.UTC(currentYear, currentMonth, checkInDay, 0, 0, 0, 0));
     
     // Get existing invoices for invoice number and duplicate checks
     const existingInvoices = await getInvoices(ownerAccountId, { period });
@@ -752,70 +859,42 @@ export const generateFirstInvoiceHandler = async (req, res) => {
       });
     }
 
-    const records = [];
-    let sequence = existingInvoices.length;
+    const totalAmount = Number((fullMonthlyRent + verificationAmount + securityDeposit).toFixed(2));
 
-    if (proratedRent > 0) {
-      records.push({
-        id: uuidv4(),
-        owner_account_id: ownerAccountId,
-        invoice_number: buildInvoiceNumber(period, sequence++),
-        tenant_id: tenant.id,
-        tenant_name: tenant.name,
-        building_id: tenant.building_id,
-        building_name: building.name,
-        room_number: tenant.room_number,
-        invoice_type: 'rent',
-        period,
-        rent_amount: proratedRent,
-        electricity_amount: 0,
-        security_deposit_amount: 0,
-        security_deposit_paid_amount: 0,
-        amount: Number(proratedRent.toFixed(2)),
-        paid_amount: 0,
-        outstanding_amount: Number(proratedRent.toFixed(2)),
-        due_date: dueDate,
-        status: 'pending',
-        is_first_invoice: true,
-        created_at: new Date(),
-        updated_at: null
-      });
-    }
-
-    if (securityDeposit > 0) {
-      records.push({
-        id: uuidv4(),
-        owner_account_id: ownerAccountId,
-        invoice_number: buildInvoiceNumber(period, sequence++),
-        tenant_id: tenant.id,
-        tenant_name: tenant.name,
-        building_id: tenant.building_id,
-        building_name: building.name,
-        room_number: tenant.room_number,
-        invoice_type: 'security_deposit',
-        period,
-        rent_amount: 0,
-        electricity_amount: 0,
-        security_deposit_amount: Number(securityDeposit.toFixed(2)),
-        security_deposit_paid_amount: 0,
-        amount: Number(securityDeposit.toFixed(2)),
-        paid_amount: 0,
-        outstanding_amount: Number(securityDeposit.toFixed(2)),
-        due_date: dueDate,
-        status: 'pending',
-        is_first_invoice: true,
-        created_at: new Date(),
-        updated_at: null
-      });
-    }
-
-    if (!records.length) {
+    if (totalAmount <= 0) {
       return res.status(400).json({
         message: 'Unable to generate first invoice because both rent and security deposit are zero'
       });
     }
 
-    const created = await createManyInvoices(records);
+    const record = {
+      id: uuidv4(),
+      owner_account_id: ownerAccountId,
+      invoice_number: buildInvoiceNumber(period, existingInvoices.length),
+      tenant_id: tenant.id,
+      tenant_name: tenant.name,
+      building_id: tenant.building_id,
+      building_name: building.name,
+      room_number: tenant.room_number,
+      invoice_type: 'rent',
+      period,
+      rent_amount: Number(fullMonthlyRent.toFixed(2)),
+      electricity_amount: 0,
+      verification_amount: Number(verificationAmount.toFixed(2)),
+      verification_paid_amount: 0,
+      security_deposit_amount: Number(securityDeposit.toFixed(2)),
+      security_deposit_paid_amount: 0,
+      amount: totalAmount,
+      paid_amount: 0,
+      outstanding_amount: totalAmount,
+      due_date: dueDate,
+      status: 'pending',
+      is_first_invoice: true,
+      created_at: new Date(),
+      updated_at: null
+    };
+
+    const created = await createManyInvoices([record]);
     const normalized = created.map(normalizeInvoiceBreakup);
 
     return res.status(201).json({

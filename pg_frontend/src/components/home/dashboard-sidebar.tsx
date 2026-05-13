@@ -60,8 +60,8 @@ const items: SidebarItem[] = [
   },
   {
     label: "Electricity Billing",
-    match: () => false,
-    inactive: true,
+    href: "/admin/electricity",
+    match: (pathname) => pathname.startsWith("/admin/electricity"),
     icon: (
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className="h-5 w-5">
         <path

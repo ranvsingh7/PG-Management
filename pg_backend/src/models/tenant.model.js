@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const tenantSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true, index: true },
+    login_id: { type: String, required: true, unique: true, index: true },
     name: { type: String, required: true },
     email: { type: String, required: true },
     phone: { type: String, required: true },
@@ -20,6 +21,14 @@ const tenantSchema = new mongoose.Schema(
     approval_status: { type: String, default: 'approved' },
     pg_id: { type: String, default: null },
     password_hash: { type: String, default: null },
+    login_last_changed_at: { type: Date, default: null },
+    last_login_at: { type: Date, default: null },
+    onboarding_status: {
+      type: String,
+      default: 'pending',
+      enum: ['pending', 'completed']
+    },
+    onboarding_completed_at: { type: Date, default: null },
     owner_account_id: { type: String, required: true, index: true },
     created_by: { type: String, default: 'admin' },
     created_at: { type: Date, default: Date.now },
@@ -35,9 +44,11 @@ const tenantSchema = new mongoose.Schema(
 tenantSchema.set('toJSON', {
   transform: (_doc, ret) => {
     delete ret._id;
+    delete ret.password_hash;
     return ret;
   }
 });
+
 
 const Tenant = mongoose.model('Tenant', tenantSchema);
 

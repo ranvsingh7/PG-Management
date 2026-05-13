@@ -36,6 +36,9 @@ export const countActiveTenantsByRoom = async (
 export const getTenantById = async (id, ownerAccountId) =>
   Tenant.findOne({ id, ...ownerScopeQuery(ownerAccountId) }).lean();
 
+export const getTenantByLoginId = async (loginId) =>
+  Tenant.findOne({ login_id: loginId }).lean();
+
 export const createTenant = async (tenant) => {
   const created = await Tenant.create(tenant);
   return created.toJSON();

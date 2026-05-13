@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
 import { SelectField } from "@/components/ui/select-field";
 
@@ -94,7 +94,7 @@ export default function ComplaintsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | ComplaintStatus>("all");
   const [searchText, setSearchText] = useState("");
 
-  const loadComplaints = async () => {
+  const loadComplaints = useCallback(async () => {
     setIsLoading(true);
     setListError(null);
 
@@ -122,11 +122,11 @@ export default function ComplaintsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchText, selectedMonth, statusFilter]);
 
   useEffect(() => {
     loadComplaints();
-  }, [selectedMonth, statusFilter, searchText]);
+  }, [loadComplaints]);
 
   const summary = useMemo(() => {
     const open = complaints.filter((c) => c.status === "open").length;

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DashboardLayout } from "@/components/home/dashboard-layout";
+import { InvoiceDetailModal } from "@/components/ui/invoice-detail-modal";
 
 type Building = {
   id: string;
@@ -19,6 +20,8 @@ type InvoiceRow = {
   period: string;
   rent_amount: number;
   electricity_amount: number;
+  verification_amount?: number;
+  verification_paid_amount?: number;
   security_deposit_amount: number;
   security_deposit_paid_amount: number;
   amount: number;
@@ -156,7 +159,7 @@ export default function InvoicesPage() {
     [items]
   );
 
-  const fetchBuildings = async () => {
+  const fetchBuildings = useCallback(async () => {
     try {
       const response = await fetch("/api/admin/buildings", { cache: "no-store" });
       const data = (await response.json()) as Building[] | { message?: string };
@@ -169,9 +172,9 @@ export default function InvoicesPage() {
     } catch {
       // no-op
     }
-  };
+  }, []);
 
-  const fetchInvoices = async () => {
+  const fetchInvoices = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -228,15 +231,15 @@ export default function InvoicesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentPage, pageSize, searchText, selectedBuilding, statusFilter, tableMonth]);
 
   useEffect(() => {
     fetchBuildings();
-  }, []);
+  }, [fetchBuildings]);
 
   useEffect(() => {
     fetchInvoices();
-  }, [tableMonth, selectedBuilding, searchText, statusFilter, currentPage]);
+  }, [fetchInvoices]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -535,7 +538,15 @@ export default function InvoicesPage() {
                 ) : (
                   items.map((invoice) => (
                     <tr key={invoice.id}>
-                      <td className="px-4 py-3 font-medium text-slate-900">{invoice.invoice_number}</td>
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        <button
+                          type="button"
+                          onClick={() => onViewInvoice(invoice.id)}
+                          className="cursor-pointer underline decoration-dotted underline-offset-4 transition hover:text-sky-700"
+                        >
+                          {invoice.invoice_number}
+                        </button>
+                      </td>
                       <td className="px-4 py-3">{invoice.tenant_name}</td>
                       <td className="px-4 py-3">{invoice.building_name}</td>
                       <td className="px-4 py-3">{invoice.room_number}</td>
@@ -643,125 +654,13 @@ export default function InvoicesPage() {
           </div>
         </section>
 
-        {viewInvoice ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-            <div className="w-full max-w-4xl rounded-2xl border border-[var(--color-border)] bg-white shadow-xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                <p className="text-sm font-semibold uppercase tracking-[0.08em] text-slate-600">Invoice Preview</p>
-                <button
-                  type="button"
-                  onClick={() => setViewInvoice(null)}
-                  className="cursor-pointer rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
-                >
-                  Close
-                </button>
-              </div>
-
-              {(() => {
-                const invoiceNumber = String(viewInvoice.invoice_number || "").trim() || "INV-2026-0001";
-                const tenantName = String(viewInvoice.tenant_name || "").trim() || "Walk-in Tenant";
-                const buildingName = String(viewInvoice.building_name || "").trim() || "Sunrise Residency";
-                const roomNumber = String(viewInvoice.room_number || "").trim() || "101";
-                const period = String(viewInvoice.period || "").trim() || "2026-04";
-                const dueDate = toPrettyDate(viewInvoice.due_date) === "-" ? "30 Apr 2026" : toPrettyDate(viewInvoice.due_date);
-
-                const rawRent = Number(viewInvoice.rent_amount || 0);
-                const rawElectricity = Number(viewInvoice.electricity_amount || 0);
-                const rawSecurity = Number(viewInvoice.security_deposit_amount || 0);
-
-                const rentAmount = rawRent > 0 ? rawRent : 8000;
-                const electricityAmount = rawElectricity > 0 ? rawElectricity : 1200;
-                const securityAmount = rawSecurity > 0 ? rawSecurity : 0;
-
-                const subtotal = Number((rentAmount + electricityAmount + securityAmount).toFixed(2));
-                const totalAmount = Number(viewInvoice.amount || 0) > 0 ? Number(viewInvoice.amount || 0) : subtotal;
-                const paidAmount = Number(viewInvoice.paid_amount || 0);
-                const outstandingAmount = Number(viewInvoice.outstanding_amount || 0) > 0
-                  ? Number(viewInvoice.outstanding_amount || 0)
-                  : Math.max(Number((totalAmount - paidAmount).toFixed(2)), 0);
-
-                return (
-                  <div className="p-6 sm:p-8">
-                    <div className="grid gap-6 sm:grid-cols-2">
-                      <div>
-                        <p className="text-3xl font-black tracking-tight text-slate-900">INVOICE</p>
-                        <p className="mt-2 text-sm text-slate-600">PG Management Services</p>
-                        <p className="text-sm text-slate-500">Billing and Collections Desk</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-                        <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Invoice Info</p>
-                        <div className="mt-2 space-y-1 text-slate-700">
-                          <p><span className="font-semibold">Invoice #:</span> {invoiceNumber}</p>
-                          <p><span className="font-semibold">Period:</span> {period}</p>
-                          <p><span className="font-semibold">Due Date:</span> {dueDate}</p>
-                          <p className="capitalize"><span className="font-semibold">Status:</span> {viewInvoice.effective_status || "pending"}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                      <div className="rounded-xl border border-slate-200 p-4 text-sm">
-                        <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Bill To</p>
-                        <p className="mt-2 font-semibold text-slate-900">{tenantName}</p>
-                        <p className="text-slate-600">{buildingName}</p>
-                        <p className="text-slate-600">Room {roomNumber}</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200 p-4 text-sm">
-                        <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Payment Snapshot</p>
-                        <div className="mt-2 space-y-1">
-                          <p className="text-slate-700"><span className="font-semibold">Paid:</span> {formatCurrency(paidAmount)}</p>
-                          <p className="text-rose-700"><span className="font-semibold">Outstanding:</span> {formatCurrency(outstandingAmount)}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
-                      <table className="min-w-full text-sm">
-                        <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.08em] text-slate-500">
-                          <tr>
-                            <th className="px-4 py-3">Description</th>
-                            <th className="px-4 py-3 text-right">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          <tr>
-                            <td className="px-4 py-3 text-slate-700">Monthly Rent</td>
-                            <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(rentAmount)}</td>
-                          </tr>
-                          <tr>
-                            <td className="px-4 py-3 text-slate-700">Electricity Charges</td>
-                            <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(electricityAmount)}</td>
-                          </tr>
-                          {securityAmount > 0 ? (
-                            <tr>
-                              <td className="px-4 py-3 text-slate-700">Security Deposit</td>
-                              <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(securityAmount)}</td>
-                            </tr>
-                          ) : null}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="mt-6 ml-auto w-full max-w-sm rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-                      <div className="flex items-center justify-between text-slate-700">
-                        <span>Subtotal</span>
-                        <span className="font-semibold">{formatCurrency(subtotal)}</span>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 text-base font-bold text-slate-900">
-                        <span>Total Invoice</span>
-                        <span>{formatCurrency(totalAmount)}</span>
-                      </div>
-                    </div>
-
-                    <p className="mt-6 text-xs text-slate-500">
-                      This is a system generated invoice preview. Dummy placeholders are shown when any invoice field is missing.
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        ) : null}
+        <InvoiceDetailModal
+          isOpen={Boolean(viewInvoice)}
+          invoice={viewInvoice}
+          onClose={() => setViewInvoice(null)}
+          title="Invoice Preview"
+          settingsEndpoint="/api/admin/settings"
+        />
 
         {editInvoice ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
@@ -1039,18 +938,12 @@ function SelectField({ label, value, onChange, options, placeholder, disabled = 
   };
 
   useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    if (highlightedIndex < 0) {
-      const selectedIndex = options.findIndex((option) => option.value === value);
-      setHighlightedIndex(selectedIndex >= 0 ? selectedIndex : 0);
+    if (!isOpen || highlightedIndex < 0) {
       return;
     }
 
     optionRefs.current[highlightedIndex]?.scrollIntoView({ block: "nearest" });
-  }, [isOpen, highlightedIndex, options, value]);
+  }, [isOpen, highlightedIndex]);
 
   return (
     <div className="grid gap-2 relative">
@@ -1107,4 +1000,3 @@ function SelectField({ label, value, onChange, options, placeholder, disabled = 
     </div>
   );
 }
-
